@@ -1,0 +1,19 @@
+[project]
+name = "chat"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "dialogue",
+    "fastapi>=0.128.0",
+    "uvicorn>=0.40.0",
+]
+
+[tool.uv.workspace]
+members = [
+    "src/dialogue",
+]
+
+[tool.uv.sources]
+dialogue = { workspace = true }

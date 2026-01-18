@@ -2,10 +2,11 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Optional, cast
+from typing import Optional
 
 import asyncpg
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -118,8 +119,8 @@ def get_password_hash(password):
     return pwd_context.hash(password)
 
 
-def create_access_token(data: dict):
-    to_encode = data.copy()
+def create_access_token(user_uuid: uuid.UUID, username: str):
+    to_encode = {"sub": str(user_uuid), "user_name": username}
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=ALGORITHM)
@@ -134,9 +135,14 @@ async def create_refresh_token(conn: asyncpg.Connection, user_uuid: uuid.UUID) -
     encoded_jwt = jwt.encode(token_payload, JWT_REFRESH_SECRET_KEY, algorithm=ALGORITHM)
 
     # Store the refresh token in the database so it can be revoked
-    refresh_token_expires_at = datetime.now(timezone.utc) + timedelta(
-        days=REFRESH_TOKEN_EXPIRE_DAYS
-    )
+    if REFRESH_TOKEN_EXPIRE_DAYS > 0:
+        refresh_token_expires_at = datetime.now(timezone.utc) + timedelta(
+            days=REFRESH_TOKEN_EXPIRE_DAYS
+        )
+    else:
+        # If REFRESH_TOKEN_EXPIRE_DAYS is 0, it means never expire, so set to NULL in DB
+        refresh_token_expires_at = None
+
     await conn.execute(
         "INSERT INTO refresh_tokens (user_uuid, token, expires_at) VALUES ($1, $2, $3)",
         user_uuid,
@@ -152,6 +158,15 @@ async def get_user_from_db(
     row = await conn.fetchrow(
         "SELECT uuid, username, email, phone_number, name, hashed_password FROM users WHERE username = $1",
         username,
+    )
+    return UserInDB(**row) if row else None
+
+async def get_user_by_uuid_from_db(
+    conn: asyncpg.Connection, user_uuid: uuid.UUID
+) -> Optional[UserInDB]:
+    row = await conn.fetchrow(
+        "SELECT uuid, username, email, phone_number, name, hashed_password FROM users WHERE uuid = $1",
+        user_uuid,
     )
     return UserInDB(**row) if row else None
 
@@ -185,13 +200,14 @@ async def get_current_user(
     )
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
-        username: str | None = payload.get("sub")
-        if username is None:
+        user_uuid_str: str | None = payload.get("sub")
+        if user_uuid_str is None:
             raise credentials_exception
-    except JWTError:
+        user_uuid = uuid.UUID(user_uuid_str)
+    except (JWTError, ValueError): # ValueError for invalid UUID string
         raise credentials_exception
 
-    user = await get_user_from_db(conn, username)
+    user = await get_user_by_uuid_from_db(conn, user_uuid)
     if user is None:
         raise credentials_exception
     return user
@@ -213,15 +229,16 @@ async def login_for_access_token(
             detail="Incorrect username or password",
         )
 
-    access_token = create_access_token(data={"sub": user.username})
+    access_token = create_access_token(user.uuid, user.username)
     refresh_token = await create_refresh_token(conn, user.uuid)
 
     if REFRESH_TOKEN_EXPIRE_DAYS > 0:
-        refresh_token_expires = timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+        cookie_expires_at = datetime.now(timezone.utc) + timedelta(
+            days=REFRESH_TOKEN_EXPIRE_DAYS
+        )
     else:
-        refresh_token_expires = timedelta(
-            days=365 * 100
-        )  # Effectively, never expires (100 years)
+        # Effectively, never expires (100 years)
+        cookie_expires_at = datetime.now(timezone.utc) + timedelta(days=365 * 100)
 
     # Set the refresh token in a secure, HttpOnly cookie
     response.set_cookie(
@@ -230,7 +247,7 @@ async def login_for_access_token(
         httponly=True,
         secure=True,
         samesite="strict",
-        expires=refresh_token_expires,
+        expires=int(cookie_expires_at.timestamp()),
     )
     return {"access_token": access_token}
 
@@ -289,15 +306,16 @@ async def refresh_access_token(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
         )
 
-    new_access_token = create_access_token(data={"sub": user_row["username"]})
+    new_access_token = create_access_token(uuid.UUID(user_uuid), user_row["username"])
     new_refresh_token = await create_refresh_token(conn, uuid.UUID(user_uuid))
 
     if REFRESH_TOKEN_EXPIRE_DAYS > 0:
-        new_refresh_token_expires = timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+        new_cookie_expires_at = datetime.now(timezone.utc) + timedelta(
+            days=REFRESH_TOKEN_EXPIRE_DAYS
+        )
     else:
-        new_refresh_token_expires = timedelta(
-            days=365 * 100
-        )  # Effectively, never expires (100 years)
+        # Effectively, never expires (100 years)
+        new_cookie_expires_at = datetime.now(timezone.utc) + timedelta(days=365 * 100)
 
     response.set_cookie(
         key="refresh_token",
@@ -305,7 +323,7 @@ async def refresh_access_token(
         httponly=True,
         secure=True,
         samesite="strict",
-        expires=new_refresh_token_expires,
+        expires=int(new_cookie_expires_at.timestamp()),
     )
 
     return {"access_token": new_access_token, "token_type": "bearer"}
@@ -324,21 +342,32 @@ async def logout(
 # Endpoint for Nginx to validate JWT efficiently
 @app.get("/auth/validate")
 async def validate_token_for_nginx(
-    request: Response, token: str = Depends(oauth2_scheme)
+    response: Response,
+    token: str = Depends(oauth2_scheme),
 ):
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
-        username: str | None = payload.get("sub")
-        if username is None:
-            raise JWTError("Username not in token payload")
+
+        username: str | None = payload.get("user_name")
+        user_id: str | None = payload.get("sub")
+
+        if not username or not user_id:
+            raise JWTError("Missing fields")
+
     except JWTError:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
         )
 
-    # Pass validated user info back to Nginx via response headers
-    request.headers["X-User-Username"] = username
-    return Response(status_code=status.HTTP_200_OK)
+    return JSONResponse(
+        content={"status": "ok"},
+        headers={
+            "X-User-ID": user_id,
+            "X-Username": username
+        }
+    )
+
 
 
 @app.post("/auth/register", response_model=User)

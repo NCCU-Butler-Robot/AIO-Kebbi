@@ -42,11 +42,16 @@ services:
       interval: 30s
       retries: 5
       start_period: 2s
-  # chat:
-  #   build:
-  #     context: ./chat
-  #     dockerfile: Dockerfile
-  #   # Add other configurations as needed, e.g., ports, environment variables, depends_on
+  chat:
+    build:
+      context: chat
+      target: dev
+      dockerfile: Dockerfile
+      args:
+        - NONROOT_USERNAME=ubuntu
+        - PROJECT_PATH=/project/chat
+    volumes:
+      - ./chat/:/project/chat/
   # socket_gateway:
   #   build:
   #     context: ./socket_gateway
@@ -71,7 +76,5 @@ services:
       - "8100:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - auth
 volumes:
   pg_data:
