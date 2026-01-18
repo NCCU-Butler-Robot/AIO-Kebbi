@@ -29,6 +29,40 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 ################################################################################
 
+FROM python-base AS hf-model-download
+ARG DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /model-download
+# RUN --mount=type=secret,id=HF_TOKEN,env=HF_TOKEN,required=true \
+#     echo $HF_TOKEN && exit 1
+RUN --mount=from=ghcr.io/astral-sh/uv:latest,source=/uv,target=/bin/uv \
+    --mount=type=secret,id=HF_TOKEN,env=HF_TOKEN,required=true \
+        uv venv --python 3.12 --clear && \
+        uv pip install huggingface-hub && \
+        uv run python - <<EOF
+from huggingface_hub import snapshot_download
+import os
+
+snapshot_download(
+    repo_id="meta-llama/Llama-3.1-8B-Instruct",
+    allow_patterns=[
+      "*.json",
+      "*.safetensors",
+    ],
+    ignore_patterns=[
+      "original/*",
+      "*.md",
+      "LICENSE",
+      ".gitattributes",
+    ],
+    token=os.environ["HF_TOKEN"],
+)
+
+print("Full model cached in HF hub structure under ~/.cache/huggingface/hub!")
+EOF
+
+################################################################################
+
 FROM python-base AS prod-prepare
 ARG DEBIAN_FRONTEND=noninteractive
 ARG NONROOT_USERNAME
@@ -97,6 +131,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
+COPY --from=hf-model-download /home/root/.cache/huggingface/hub/ /home/root/.cache/huggingface/hub/
+
 WORKDIR ${PROJECT_PATH}
 
 CMD ["sleep", "infinity"]
@@ -109,6 +145,7 @@ ARG NONROOT_USERNAME
 
 WORKDIR ${PROJECT_PATH}
 
+COPY --chown=${NONROOT_USERNAME}:${NONROOT_USERNAME} --from=hf-model-download /home/root/.cache/huggingface/hub/ /home/${NONROOT_USERNAME}/.cache/huggingface/hub/
 COPY --chown=${NONROOT_USERNAME}:${NONROOT_USERNAME} --from=prod-prepare /home/${NONROOT_USERNAME}/.local/share/uv/python /home/${NONROOT_USERNAME}/.local/share/uv/python
 COPY --chown=${NONROOT_USERNAME}:${NONROOT_USERNAME} --from=prod-prepare ${VENV_PATH} ${VENV_PATH}
 

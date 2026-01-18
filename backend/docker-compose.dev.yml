@@ -50,6 +50,8 @@ services:
       args:
         - NONROOT_USERNAME=ubuntu
         - PROJECT_PATH=/project/chat
+      secrets:
+        - HF_TOKEN
     volumes:
       - ./chat/:/project/chat/
   # socket_gateway:
@@ -78,3 +80,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
 volumes:
   pg_data:
+
+secrets:
+  HF_TOKEN:
+    environment: HF_TOKEN

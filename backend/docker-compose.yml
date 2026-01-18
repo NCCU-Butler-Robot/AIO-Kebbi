@@ -50,6 +50,17 @@ services:
       args:
         - NONROOT_USERNAME=ubuntu
         - PROJECT_PATH=/project/chat
+      secrets:
+        - HF_TOKEN
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_DATABASE_NAME: ${DB_DATABASE_NAME}
+    depends_on:
+      db:
+        condition: service_healthy
   # socket_gateway:
   #   build:
   #     context: ./socket_gateway
@@ -78,3 +89,7 @@ services:
       - auth
 volumes:
   pg_data:
+
+secrets:
+  HF_TOKEN:
+    environment: HF_TOKEN
