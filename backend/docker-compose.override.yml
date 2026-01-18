@@ -1,7 +1,0 @@
-# services:
-#   auth:
-#     build:
-#       target: prod-prepare
-#     command: ["sleep", "infinity"]
-#     # volumes:
-#     #   - ./auth:/project/auth

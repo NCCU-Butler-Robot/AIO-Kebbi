@@ -1,14 +1,13 @@
 // For format details, see https://aka.ms/devcontainer.json. For config options, see the
 // README at: https://github.com/devcontainers/templates/tree/main/src/ubuntu
 {
-  "name": "AIO Kebbi backend Dev Container",
-  "dockerComposeFile": "./docker-compose.dev.yml",
+  "name": "AIO Kebbi backend auth Dev Container",
+  "dockerComposeFile": "../../docker-compose.dev.yml",
   // The service vscode connects to
-  "service": "realsense_image_process",
+  "service": "auth",
   "workspaceFolder": "/project/auth",
   // This tells Docker to load the .env file when starting the container
   "overrideCommand": true,
-  "runArgs": ["--env-file","../.env"],
   // Variables used in all of the container. Rebuild is required if you want to modify
   "containerEnv": {
     "GIT_EDITOR": "vim"
