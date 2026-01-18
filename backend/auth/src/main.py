@@ -2,7 +2,7 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, cast
 
 import asyncpg
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
@@ -36,6 +36,9 @@ if not JWT_SECRET_KEY or not JWT_REFRESH_SECRET_KEY:
     raise ValueError(
         "JWT_SECRET_KEY and JWT_REFRESH_SECRET_KEY must be set in the environment"
     )
+
+JWT_SECRET_KEY: str = str(JWT_SECRET_KEY)
+JWT_REFRESH_SECRET_KEY: str = str(JWT_REFRESH_SECRET_KEY)
 
 # Construct the database URL from the environment variables
 DATABASE_URL = (
@@ -182,7 +185,7 @@ async def get_current_user(
     )
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
+        username: str | None = payload.get("sub")
         if username is None:
             raise credentials_exception
     except JWTError:
@@ -248,7 +251,7 @@ async def refresh_access_token(
         payload = jwt.decode(
             refresh_token, JWT_REFRESH_SECRET_KEY, algorithms=[ALGORITHM]
         )
-        user_uuid: str = payload.get("sub")
+        user_uuid: str | None = payload.get("sub")
         if user_uuid is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -325,7 +328,7 @@ async def validate_token_for_nginx(
 ):
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
+        username: str | None = payload.get("sub")
         if username is None:
             raise JWTError("Username not in token payload")
     except JWTError:
