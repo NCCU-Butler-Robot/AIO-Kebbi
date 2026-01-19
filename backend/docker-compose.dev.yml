@@ -55,14 +55,19 @@ services:
         - GIT_AUTH_TOKEN
     volumes:
       - ./chat/:/project/chat/
-  # socket_gateway:
-  #   build:
-  #     context: ./socket_gateway
-  #     dockerfile: Dockerfile
-  #   # Remember nginx.conf expects this on port 5000, so ensure your Dockerfile exposes it.
-  #   # ports:
-  #   #   - "5000"
-  #   # Add other configurations as needed
+  socket_gateway:
+    build:
+      context: ./socket_gateway
+      dockerfile: Dockerfile
+      args:
+        - NONROOT_USERNAME=ubuntu
+        - PROJECT_PATH=/project/chat
+    volumes:
+      - ./socket_gateway/:/project/socket_gateway/
+    # Remember nginx.conf expects this on port 5000, so ensure your Dockerfile exposes it.
+    # ports:
+    #   - "5000"
+    # Add other configurations as needed
   # food_detect:
   #   build:
   #     context: ./food_detect

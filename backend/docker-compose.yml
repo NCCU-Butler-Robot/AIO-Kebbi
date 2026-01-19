@@ -64,14 +64,17 @@ services:
     depends_on:
       db:
         condition: service_healthy
-  # socket_gateway:
-  #   build:
-  #     context: ./socket_gateway
-  #     dockerfile: Dockerfile
-  #   # Remember nginx.conf expects this on port 5000, so ensure your Dockerfile exposes it.
-  #   # ports:
-  #   #   - "5000"
-  #   # Add other configurations as needed
+  socket_gateway:
+    build:
+      context: ./socket_gateway
+      dockerfile: Dockerfile
+      args:
+        - NONROOT_USERNAME=ubuntu
+        - PROJECT_PATH=/project/chat
+    # Remember nginx.conf expects this on port 5000, so ensure your Dockerfile exposes it.
+    # ports:
+    #   - "5000"
+    # Add other configurations as needed
   # food_detect:
   #   build:
   #     context: ./food_detect
@@ -82,6 +85,11 @@ services:
   #     context: ./tts
   #     dockerfile: Dockerfile
   #   # Add other configurations as needed
+  redis:
+    image: redis:8-alpine
+    restart: on-failure
+    # ports:
+    #   - "6379"
   nginx:
     image: nginx:stable-alpine
     ports:

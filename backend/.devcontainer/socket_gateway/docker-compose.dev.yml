@@ -1,0 +1,8 @@
+services:
+  socket_gateway:
+    build:
+      target: dev
+    restart: no
+    volumes:
+      - ./socket_gateway:/project/socket_gateway
+    depends_on: []
