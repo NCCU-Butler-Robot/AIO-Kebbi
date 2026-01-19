@@ -52,6 +52,7 @@ services:
         - PROJECT_PATH=/project/chat
       secrets:
         - HF_TOKEN
+        - GIT_AUTH_TOKEN
     environment:
       DB_HOST: ${DB_HOST}
       DB_PORT: ${DB_PORT}
@@ -93,3 +94,5 @@ volumes:
 secrets:
   HF_TOKEN:
     environment: HF_TOKEN
+  GIT_AUTH_TOKEN:
+    environment: GIT_AUTH_TOKEN

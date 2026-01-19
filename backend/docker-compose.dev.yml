@@ -52,6 +52,7 @@ services:
         - PROJECT_PATH=/project/chat
       secrets:
         - HF_TOKEN
+        - GIT_AUTH_TOKEN
     volumes:
       - ./chat/:/project/chat/
   # socket_gateway:
@@ -84,3 +85,5 @@ volumes:
 secrets:
   HF_TOKEN:
     environment: HF_TOKEN
+  GIT_AUTH_TOKEN:
+    environment: GIT_AUTH_TOKEN

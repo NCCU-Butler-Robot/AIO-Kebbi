@@ -20,7 +20,7 @@
   //     "GIT_AUTH_TOKEN": "${localEnv:GIT_AUTH_TOKEN}"
   //   },
   // "onCreateCommand": "",
-  "postCreateCommand": "uv sync --locked",
+  "postCreateCommand": "uv sync --locked && ./downloadModels.sh",
   // "postStartCommand": "",
   // "postAttachCommand": {}
   "customizations": {
