@@ -1,20 +1,20 @@
 import asyncio
 from contextlib import asynccontextmanager
-# from typing import List, Dict # Not directly used in main.py anymore
 
+# from typing import List, Dict # Not directly used in main.py anymore
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
-from .llm_pipeline import LLMPipeline # SYSTEM_PROMPT no longer directly imported here
 from .db_manager.database import (
-    connect_to_db,
     close_db_connection,
     # These are now handled by conversation_manager
     # get_user_latest_conversation,
     # create_conversation,
     # add_message,
+    connect_to_db,
 )
-from .dialogue.conversation_manager import handle_chat_message # New import
+from .dialogue.conversation_manager import handle_chat_message  # New import
+from .llm_pipeline import LLMPipeline  # SYSTEM_PROMPT no longer directly imported here
 
 
 class UserMessage(BaseModel):
@@ -52,7 +52,7 @@ async def chat_message(
         user_id=x_user_id,
         prompt=message.prompt,
         llm_pipeline=llm,
-        generate_lock=generate_lock
+        generate_lock=generate_lock,
     )
 
     return {"message": assistant_response}

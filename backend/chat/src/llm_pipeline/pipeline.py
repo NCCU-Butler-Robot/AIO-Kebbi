@@ -11,8 +11,12 @@ from transformers import (
 )
 
 # ========== 路徑設定 ==========
-ADAPTER_DIR = os.path.join(os.path.dirname(__file__), "llama3.1_8b_butler_lora")  # 訓練輸出（LoRA adapter）資料夾
-TOKENIZER_DIR = os.path.join(os.path.dirname(__file__), "patched_tokenizer_llama31")  # 訓練時存的 patched tokenizer
+ADAPTER_DIR = os.path.join(
+    os.path.dirname(__file__), "llama3.1_8b_butler_lora"
+)  # 訓練輸出（LoRA adapter）資料夾
+TOKENIZER_DIR = os.path.join(
+    os.path.dirname(__file__), "patched_tokenizer_llama31"
+)  # 訓練時存的 patched tokenizer
 
 # 基底模型（需與訓練時一致）
 MODEL_ID = "meta-llama/Llama-3.1-8B-Instruct"
