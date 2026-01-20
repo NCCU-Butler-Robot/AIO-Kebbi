@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from copy import deepcopy
 
 import firebase_admin
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from firebase_admin import messaging
 from pydantic import BaseModel
 from pywebpush import WebPushException, webpush
@@ -58,11 +58,11 @@ class PushSubscription(BaseModel):
 
 
 class SubscribeRequest(BaseModel):
-    user_id: str
+    # user_id: str | None = None
     pushSubscription: PushSubscription | None = None
     fcm_token: str | None = None
     apns_token: str | None = None
-    platform: str = "web"
+    platform: str # "web", "fcm", "apns"
 
 
 class NotificationPayload(BaseModel):
@@ -84,11 +84,20 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/api/push/subscribe")
-async def subscribe_web(subscription: SubscribeRequest):
+async def subscribe_web(
+    subscription: SubscribeRequest,
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
+    x_username: str | None = Header(None, alias="X-Username"),
+    x_installation_id: str | None = Header(None, alias="X-Installation-Id"),
+):
     """Save or update a push subscription in the database."""
     print("Subscription request: ", subscription)
     try:
-        user_id = subscription.user_id
+        if not x_user_id:
+            raise HTTPException(
+                status_code=400, detail="X-User-Id header is required."
+            )
+        user_id = x_user_id
         platform = subscription.platform
         if subscription.pushSubscription:
             push_sub = subscription.pushSubscription.model_dump()
