@@ -1,5 +1,4 @@
 import asyncio
-import json
 from io import BytesIO
 import redis.asyncio as redis
 from gtts import gTTS
@@ -8,60 +7,74 @@ import uuid
 
 async def tts_worker():
     """
-    Connects to Redis and listens for 'tts_generation_request' events.
+    Connects to Redis and serially processes jobs from the 'app_stream' using a consumer group.
     """
     r = redis.from_url("redis://redis:6379/0")
-    async with r.pubsub() as pubsub:
-        await pubsub.subscribe("app_events")
-        print("[TTS Worker] Subscribed to 'app_events' channel.")
-        while True:
-            try:
-                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=None)
-                if message and message["type"] == "message":
-                    data = json.loads(message["data"])
-                    if data.get("type") == "tts_generation_request":
-                        user_id = data.get("user_id")
-                        installation_id = data.get("installation_id")
-                        text = data.get("text")
-                        conversation_id = data.get("conversation_id")
-                        message_id = data.get("message_id")
+    stream_name = "app_stream"
+    group_name = "tts_group"
+    consumer_name = f"tts_worker_{uuid.uuid4()}"
 
-                        if not all([user_id, installation_id, text, message_id, conversation_id]):
-                            print(f"[TTS Worker] Skipping malformed job: {data}")
-                            continue
+    try:
+        # Create the stream and consumer group if they don't exist.
+        await r.xgroup_create(stream_name, group_name, id="0", mkstream=True)
+        print(f"[TTS Worker] Consumer group '{group_name}' created or already exists.")
+    except redis.exceptions.ResponseError as e:
+        if "BUSYGROUP" not in str(e):
+            raise  # Re-raise if it's not the expected "group already exists" error
+        print(f"[TTS Worker] Consumer group '{group_name}' already exists.")
 
-                        print(
-                            f"[TTS Worker] Received job for installation_id: {installation_id}"
-                        )
+    print(f"[TTS Worker] {consumer_name} waiting for jobs...")
 
-                        # 1. Generate audio bytes in memory using gTTS
-                        mp3_fp = BytesIO()
-                        tts = gTTS(text, lang="en")
-                        tts.write_to_fp(mp3_fp)
-                        mp3_fp.seek(0)
-                        audio_bytes = mp3_fp.read()
+    while True:
+        try:
+            # Read from the stream. '>' means get new messages. BLOCK 0 means wait forever.
+            response = await r.xreadgroup(group_name, consumer_name, {stream_name: ">"}, count=1, block=0)
+            
+            if not response:
+                continue
 
-                        # 2. Store the binary audio in Redis with a short expiry
-                        audio_key = f"audio:{uuid.uuid4()}"
-                        # Set to expire in 60 seconds, plenty of time for delivery
-                        await r.setex(audio_key, 60, audio_bytes)
+            stream, messages = response[0]
+            stream_message_id, data = messages[0]
 
-                        # 3. Publish a new event with the key to the audio data
-                        delivery_event = {
-                            "type": "audio_delivery",
-                            "user_id": user_id,
-                            "installation_id": installation_id,
-                            "conversation_id": conversation_id,
-                            "message_id": message_id,
-                            "audio_key": audio_key,
-                        }
-                        await r.publish("app_events", json.dumps(delivery_event))
-                        print(
-                            f"[TTS Worker] Published audio_delivery for installation_id: {installation_id}"
-                        )
-            except Exception as e:
-                print(f"[TTS Worker] Error: {e}")
-                await asyncio.sleep(5)
+            # Decode byte keys and values from Redis
+            decoded_data = {k.decode('utf-8'): v.decode('utf-8') for k, v in data.items()}
+
+            if decoded_data.get("type") == "tts_generation_request":
+                print(f"[TTS Worker] Received job {stream_message_id} for installation_id: {decoded_data.get('installation_id')}")
+                
+                # Generate audio in a separate thread to avoid blocking the event loop.
+                def generate_audio():
+                    mp3_fp = BytesIO()
+                    tts = gTTS(decoded_data["text"], lang="en")
+                    tts.write_to_fp(mp3_fp)
+                    mp3_fp.seek(0)
+                    return mp3_fp.read()
+
+                audio_bytes = await asyncio.to_thread(generate_audio)
+
+                # Store the binary audio in Redis with a short expiry
+                audio_key = f"audio:{uuid.uuid4()}"
+                await r.setex(audio_key, 60, audio_bytes)
+
+                # Add the audio delivery event back to the stream for the gateway to process
+                delivery_event = {
+                    "type": "audio_delivery",
+                    "user_id": decoded_data["user_id"],
+                    "installation_id": decoded_data["installation_id"],
+                    "conversation_id": decoded_data["conversation_id"],
+                    "message_id": decoded_data["message_id"],
+                    "audio_key": audio_key,
+                }
+                await r.xadd(stream_name, delivery_event)
+                print(f"[TTS Worker] Added audio_delivery event for job {stream_message_id}")
+            
+            # Acknowledge the message so it's not delivered again.
+            await r.xack(stream_name, group_name, stream_message_id)
+
+        except Exception as e:
+            print(f"[TTS Worker] Error in main dispatcher loop: {e}")
+            await asyncio.sleep(5)
+
 
 if __name__ == "__main__":
     asyncio.run(tts_worker())

@@ -1,8 +1,8 @@
 import asyncio
-import json
 import socketio
 import uvicorn
 import redis.asyncio as redis
+import uuid
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
@@ -78,29 +78,41 @@ async def process_audio_delivery(redis_client, data):
 
 
 async def redis_listener():
-    """Listens to Redis and DISPATCHES messages to concurrent worker tasks."""
+    """Reads from a Redis Stream and dispatches messages to concurrent worker tasks."""
     r = redis.from_url("redis://redis:6379/0")
-    async with r.pubsub() as pubsub:
-        await pubsub.subscribe("app_events")
-        print("[Socket Gateway] Subscribed to 'app_events' channel.")
-        while True:
-            try:
-                # Use a longer timeout or None to wait indefinitely for a message
-                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=None)
-                if message and message["type"] == "message":
-                    data = json.loads(message["data"])
-                    event_type = data.get("type")
-                    
-                    # --- THE KEY CHANGE: Create a background task for each message ---
-                    if event_type == "text_broadcast":
-                        # Don't await here! Just start the task.
-                        asyncio.create_task(process_text_broadcast(data))
-                    elif event_type == "audio_delivery":
-                        # Don't await here! Pass the redis client to the task.
-                        asyncio.create_task(process_audio_delivery(r, data))
-            except Exception as e:
-                print(f"[Socket Gateway] Error in Redis listener dispatcher: {e}")
-                await asyncio.sleep(5) # Avoid fast-spinning on persistent errors
+    stream_name = "app_stream"
+    group_name = "gateway_group"
+    consumer_name = f"gateway_worker_{uuid.uuid4()}"
+
+    try:
+        await r.xgroup_create(stream_name, group_name, id="0", mkstream=True)
+        print(f"[Socket Gateway] Consumer group '{group_name}' created or already exists.")
+    except redis.exceptions.ResponseError as e:
+        if "BUSYGROUP" not in str(e):
+            raise
+        print(f"[Socket Gateway] Consumer group '{group_name}' already exists.")
+
+    print(f"[Socket Gateway] {consumer_name} waiting for jobs...")
+    while True:
+        try:
+            response = await r.xreadgroup(group_name, consumer_name, {stream_name: ">"}, count=1, block=0)
+            if not response:
+                continue
+
+            stream, messages = response[0]
+            message_id, data = messages[0]
+            decoded_data = {k.decode('utf-8'): v.decode('utf-8') for k, v in data.items()}
+            event_type = decoded_data.get("type")
+
+            if event_type == "text_broadcast":
+                asyncio.create_task(process_text_broadcast(decoded_data))
+            elif event_type == "audio_delivery":
+                asyncio.create_task(process_audio_delivery(r, decoded_data))
+
+            await r.xack(stream_name, group_name, message_id)
+        except Exception as e:
+            print(f"[Socket Gateway] Error in Redis listener dispatcher: {e}")
+            await asyncio.sleep(5)
 
 
 @sio.event

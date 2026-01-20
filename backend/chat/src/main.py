@@ -60,10 +60,11 @@ async def publish_events(user_id: str, installation_id: str, text: str, message_
     }
     # Ensure the client is available before publishing
     if database.redis_client:
-        await database.redis_client.publish("app_events", json.dumps(gateway_event))
-        await database.redis_client.publish("app_events", json.dumps(tts_event))
+        # XADD adds events to a stream. The '*' generates a unique ID.
+        await database.redis_client.xadd("app_stream", gateway_event)
+        await database.redis_client.xadd("app_stream", tts_event)
         print(
-            f"[Chat Service] Published text_broadcast and tts_generation_request for user {user_id}"
+            f"[Chat Service] Added text_broadcast and tts_generation_request to stream for user {user_id}"
         )
     else:
         print(
