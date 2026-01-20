@@ -118,6 +118,27 @@ services:
   #       - NONROOT_USERNAME=ubuntu
   #       - PROJECT_PATH=/project/tts
   #   # Add other configurations as needed
+  push_notification:
+    build:
+      context: ./push_notification
+      dockerfile: Dockerfile
+      args:
+        - NONROOT_USERNAME=ubuntu
+        - PROJECT_PATH=/project/push_notification
+    # ports:
+    #   - "8000"
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_DATABASE_NAME: ${DB_DATABASE_NAME}
+      FIREBASE_CREDENTIALS_PATH: /run/secrets/FCM_CREDENTIALS
+    secrets:
+      - FCM_CREDENTIALS
+    depends_on:
+      db:
+        condition: service_healthy
   redis:
     image: redis:8-alpine
     restart: on-failure
@@ -144,3 +165,5 @@ secrets:
     environment: HF_TOKEN
   GIT_AUTH_TOKEN:
     environment: GIT_AUTH_TOKEN
+  FCM_CREDENTIALS:
+    file: ./secrets/aio-kebbi-firebase-adminsdk-fbsvc-0d7dde61d4.json

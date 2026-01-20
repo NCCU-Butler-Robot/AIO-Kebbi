@@ -1,33 +1,49 @@
-/secrets
+# Created by https://www.toptal.com/developers/gitignore/api/git,python,venv
+# Edit at https://www.toptal.com/developers/gitignore?templates=git,python,venv
 
+### Git ###
+# Created by git for backups. To disable backups in Git:
+# $ git config --global mergetool.keepBackup false
+*.orig
+
+# Created by git when using merge tools for conflicts
+*.BACKUP.*
+*.BASE.*
+*.LOCAL.*
+*.REMOTE.*
+*_BACKUP_*.txt
+*_BASE_*.txt
+*_LOCAL_*.txt
+*_REMOTE_*.txt
+
+### Python ###
 # Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[codz]
+**/__pycache__/
+*.py[cod]
 *$py.class
 
 # C extensions
 *.so
 
 # Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
+**/.Python
+**/build/
+**/develop-eggs/
+**/dist/
+**/downloads/
+**/eggs/
+**/.eggs/
+**/lib/
+**/lib64/
+**/parts/
+**/sdist/
+**/var/
+**/wheels/
+**/share/python-wheels/
+**/*.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
-
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -40,19 +56,19 @@ pip-log.txt
 pip-delete-this-directory.txt
 
 # Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
+**/htmlcov/
+**/.tox/
+**/.nox/
 .coverage
 .coverage.*
 .cache
 nosetests.xml
 coverage.xml
 *.cover
-*.py.cover
-.hypothesis/
-.pytest_cache/
-cover/
+*.py,cover
+**/.hypothesis/
+**/.pytest_cache/
+**/cover/
 
 # Translations
 *.mo
@@ -65,24 +81,24 @@ db.sqlite3
 db.sqlite3-journal
 
 # Flask stuff:
-instance/
-.webassets-cache
+**/instance/
+**/.webassets-cache
 
 # Scrapy stuff:
-.scrapy
+**/.scrapy
 
 # Sphinx documentation
-docs/_build/
+**/docs/_build/
 
 # PyBuilder
-.pybuilder/
-target/
+**/.pybuilder/
+**/target/
 
 # Jupyter Notebook
-.ipynb_checkpoints
+**/.ipynb_checkpoints
 
 # IPython
-profile_default/
+**/profile_default/
 ipython_config.py
 
 # pyenv
@@ -97,38 +113,23 @@ ipython_config.py
 #   install all needed dependencies.
 #Pipfile.lock
 
-# UV
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#uv.lock
-
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
 #   commonly ignored for libraries.
 #   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
 #poetry.lock
-#poetry.toml
 
 # pdm
 #   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
-#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
 #pdm.lock
-#pdm.toml
-.pdm-python
-.pdm-build/
-
-# pixi
-#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
-#pixi.lock
-#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
-#   in the .venv directory. It is recommended not to include this directory in version control.
-.pixi
+#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
+#   in version control.
+#   https://pdm.fming.dev/#use-with-ide
+.pdm.toml
 
 # PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
+**/__pypackages__/
 
 # Celery stuff
 celerybeat-schedule
@@ -138,38 +139,37 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
-.envrc
+**/.env
 .venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+**/env/
+**/venv/
+**/ENV/
+**/env.bak/
+**/venv.bak/
 
 # Spyder project settings
-.spyderproject
-.spyproject
+**/.spyderproject
+**/.spyproject
 
 # Rope project settings
-.ropeproject
+**/.ropeproject
 
 # mkdocs documentation
-/site
+**/site/
 
 # mypy
-.mypy_cache/
+**/.mypy_cache/
 .dmypy.json
 dmypy.json
 
 # Pyre type checker
-.pyre/
+**/.pyre/
 
 # pytype static type analyzer
-.pytype/
+**/.pytype/
 
 # Cython debug symbols
-cython_debug/
+**/cython_debug/
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
@@ -178,33 +178,55 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Abstra
-# Abstra is an AI-powered process automation framework.
-# Ignore directories containing user credentials, local state, and settings.
-# Learn more at https://abstra.io/docs
-.abstra/
+### Python Patch ###
+# Poetry local configuration file - https://python-poetry.org/docs/configuration/#local-configuration
+poetry.toml
 
-# Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#  you could uncomment the following to ignore the entire vscode folder
-# .vscode/
+# ruff
+**/.ruff_cache/
 
-# Ruff stuff:
-.ruff_cache/
+# LSP config files
+pyrightconfig.json
 
-# PyPI configuration file
-.pypirc
+### venv ###
+# Virtualenv
+# http://iamzed.com/2009/05/07/a-primer-on-virtualenv/
+[Bb]in
+[Ii]nclude
+[Ll]ib
+[Ll]ib64
+[Ll]ocal
+[Ss]cripts
+pyvenv.cfg
+pip-selfcheck.json
 
-# Cursor
-#  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
-#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
-#  refer to https://docs.cursor.com/context/ignore-files
-.cursorignore
-.cursorindexingignore
+# End of https://www.toptal.com/developers/gitignore/api/git,python,venv
 
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
+### Docker ###
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+### Git ###
+.git
+.gitmodules
+.gitignore
+.gitattributes
+.gitconfig
+.gitkeep
+
+### GitHub ###
+**/.github/
+
+### VSCode ###
+**/.vscode/
+.devcontainer/
+
+### docs ###
+**/docs/
+README.md
+CHANGELOG.md
+readme.md
+changelog.md
+
+### project files ###
