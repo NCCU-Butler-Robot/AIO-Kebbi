@@ -61,6 +61,12 @@ services:
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_DATABASE_NAME: ${DB_DATABASE_NAME}
+      # TTS Service Configuration
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      TTS_MODEL: ${TTS_MODEL:-tts-1}
+      VOICE_MODEL: ${VOICE_MODEL:-alloy}
+      # Food Recognition Service Configuration  
+      FOOD_API_URL: ${FOOD_API_URL:-https://food.bestweiwei.dpdns.org}
     depends_on:
       db:
         condition: service_healthy
@@ -80,14 +86,14 @@ services:
   #     context: ./food_detect
   #     dockerfile: Dockerfile
   #   # Add other configurations as needed
-  tts:
-    build:
-      context: ./tts
-      dockerfile: Dockerfile
-      args:
-        - NONROOT_USERNAME=ubuntu
-        - PROJECT_PATH=/project/tts
-    # Add other configurations as needed
+  # tts:
+  #   build:
+  #     context: ./tts
+  #     dockerfile: Dockerfile
+  #     args:
+  #       - NONROOT_USERNAME=ubuntu
+  #       - PROJECT_PATH=/project/tts
+  #   # Add other configurations as needed
   redis:
     image: redis:8-alpine
     restart: on-failure

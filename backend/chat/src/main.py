@@ -1,9 +1,11 @@
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from io import BytesIO
+from typing import Optional
 
-# from typing import List, Dict # Not directly used in main.py anymore
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, UploadFile, File, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 # Import the database module itself to access its global variables correctly.
@@ -12,6 +14,8 @@ from .db_manager import database
 # Import specific functions needed.
 from .dialogue.conversation_manager import handle_chat_message  # New import
 from .llm_pipeline import LLMPipeline  # SYSTEM_PROMPT no longer directly imported here
+from .tts_service import TTSService
+from .food_recognition import FoodRecognitionService
 
 
 class UserMessage(BaseModel):
@@ -19,12 +23,14 @@ class UserMessage(BaseModel):
 
 
 llm: LLMPipeline | None = None
+tts_service: TTSService | None = None
+food_service: FoodRecognitionService | None = None
 generate_lock = asyncio.Lock()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global llm
+    global llm, tts_service, food_service
     await database.connect_to_db()
     # Check if the redis_client was successfully initialized before using it.
     if database.redis_client:
@@ -34,6 +40,8 @@ async def lifespan(app: FastAPI):
             "Redis client could not be initialized. Application cannot start."
         )
     llm = LLMPipeline()
+    tts_service = TTSService()
+    food_service = FoodRecognitionService()
     yield
     await database.close_db_connection()
     await database.close_redis_connection()
@@ -104,18 +112,112 @@ async def chat_message(
     conversation_id = response_data["conversation_id"]
     assistant_message_id = response_data["message_id"]
 
-    # Asynchronously publish events to Redis
-    asyncio.create_task(
-        publish_events(x_user_id, x_installation_id, assistant_response, assistant_message_id, conversation_id)
+    # Generate audio from text using TTS service
+    try:
+        audio_bytes = await tts_service.generate_speech_bytes(assistant_response)
+        
+        # Create response with audio file and text in headers
+        response = Response(
+            content=audio_bytes,
+            media_type="audio/mpeg",
+            headers={
+                "X-Response-Text": assistant_response,
+                "X-Message-Id": assistant_message_id,
+                "X-Conversation-Id": conversation_id,
+                "X-Recipient-User-Id": x_user_id,
+                "X-Source-Installation-Id": x_installation_id,
+                "Content-Disposition": "attachment; filename=response.mp3"
+            }
+        )
+        
+        # Asynchronously publish events to Redis (for socket gateway)
+        asyncio.create_task(
+            publish_events(x_user_id, x_installation_id, assistant_response, assistant_message_id, conversation_id)
+        )
+        
+        return response
+        
+    except Exception as e:
+        print(f"[ERROR] TTS generation failed: {e}")
+        # Fallback to JSON response if TTS fails
+        return {
+            "message": assistant_response,
+            "message_id": assistant_message_id,
+            "conversation_id": conversation_id,
+            "recipient_user_id": x_user_id,
+            "source_installation_id": x_installation_id,
+            "error": "TTS generation failed"
+        }
+
+
+@app.post("/api/food-recognition/")
+async def food_recognition(
+    file: UploadFile = File(...),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
+    x_username: str | None = Header(None, alias="X-Username"),
+    x_installation_id: str | None = Header(None, alias="X-Installation-Id"),
+):
+    """
+    食物辨識 API 端點
+    上傳圖片，返回食物辨識結果
+    """
+    print(
+        f"[DEBUG] Food recognition request from {x_username} ({x_user_id}) on device {x_installation_id}"
     )
 
-    return {
-        "message": assistant_response,
-        "message_id": assistant_message_id,
-        "conversation_id": conversation_id,
-        "recipient_user_id": x_user_id,
-        "source_installation_id": x_installation_id,
-    }
+    if not all([x_user_id, x_installation_id]):
+        raise HTTPException(
+            status_code=400,
+            detail="X-User-Id and X-Installation-Id headers are required.",
+        )
+
+    # Validate file type
+    if not file.content_type or not file.content_type.startswith('image/'):
+        raise HTTPException(
+            status_code=400,
+            detail="Only image files are allowed."
+        )
+
+    try:
+        # Save uploaded file temporarily
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_file_path = tmp_file.name
+
+        # Call food recognition service
+        result = await food_service.recognize_food(tmp_file_path)
+        
+        # Clean up temporary file
+        import os
+        os.unlink(tmp_file_path)
+        
+        return {
+            "detect_url": result["detect_url"],
+            "user_id": x_user_id,
+            "installation_id": x_installation_id,
+            "filename": file.filename
+        }
+        
+    except Exception as e:
+        print(f"[ERROR] Food recognition failed: {e}")
+        # Clean up temporary file if it exists
+        try:
+            import os
+            if 'tmp_file_path' in locals():
+                os.unlink(tmp_file_path)
+        except:
+            pass
+            
+        # Return default URL on error
+        return {
+            "detect_url": "https://food.bestweiwei.dpdns.org",
+            "user_id": x_user_id,
+            "installation_id": x_installation_id,
+            "error": "Food recognition failed, returning default URL"
+        }
+
 
 
 if __name__ == "__main__":
