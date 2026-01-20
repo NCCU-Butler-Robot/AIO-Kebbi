@@ -84,7 +84,7 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/api/push/subscribe")
-async def subscribe_web(
+async def subscribe(
     subscription: SubscribeRequest,
     x_user_id: str | None = Header(None, alias="X-User-Id"),
     x_username: str | None = Header(None, alias="X-Username"),
