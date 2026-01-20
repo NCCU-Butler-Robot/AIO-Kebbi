@@ -1,0 +1,40 @@
+# 使用輕量級的Python基礎映像，無需CUDA支持
+FROM python:3.12-slim
+
+# 設置工作目錄
+WORKDIR /app
+
+# 設置環境變數
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PYTHONPATH="/app/src" \
+    PYTHONPATH="/app/src"
+
+# 安裝系統依賴
+RUN apt-get update && apt-get install -y \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 複製項目文件
+COPY pyproject.toml ./
+COPY src/ ./src/
+
+# 安裝Python依賴（不包含本地workspace包）
+RUN pip install --no-cache-dir -e .
+
+# 創建非root用戶
+RUN useradd --create-home --shell /bin/bash appuser
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# 暴露端口
+EXPOSE 8000
+
+# 健康檢查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# 啟動命令
+CMD ["python", "src/main.py"]

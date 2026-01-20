@@ -70,6 +70,30 @@ services:
     depends_on:
       db:
         condition: service_healthy
+  fraud:
+    build:
+      context: fraud
+      dockerfile: Dockerfile
+      args:
+        - NONROOT_USERNAME=ubuntu
+        - PROJECT_PATH=/project/fraud
+    # ports:
+    #   - "8000"
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_DATABASE_NAME: ${DB_DATABASE_NAME}
+      # Anti-Fraud Service Configuration
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      # TTS Service Configuration
+      TTS_MODEL: ${TTS_MODEL:-tts-1}
+      VOICE_MODEL: ${VOICE_MODEL:-alloy}
+    depends_on:
+      db:
+        condition: service_healthy
   socket_gateway:
     build:
       context: ./socket_gateway
@@ -109,6 +133,7 @@ services:
       - auth
       - db
       - chat
+      - fraud
       - socket_gateway
       - redis
 volumes:

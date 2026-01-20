@@ -1,0 +1,234 @@
+{
+	"info": {
+		"name": "Anti-Fraud Service API Tests",
+		"description": "Test collection for the Anti-Fraud Communication Service",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/health",
+					"host": ["{{base_url}}"],
+					"path": ["health"]
+				}
+			}
+		},
+		{
+			"name": "Bank Scam Test",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-User-Id",
+						"value": "test-user-001",
+						"type": "text"
+					},
+					{
+						"key": "X-Username",
+						"value": "john_doe",
+						"type": "text"
+					},
+					{
+						"key": "X-Installation-Id",
+						"value": "device-001",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"prompt\": \"Hello, this is customer service from your bank. We've detected some suspicious activity on your account and need to verify your information immediately.\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/fraud/",
+					"host": ["{{base_url}}"],
+					"path": ["api", "fraud", ""]
+				}
+			}
+		},
+		{
+			"name": "Tech Support Scam Test",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-User-Id",
+						"value": "test-user-002",
+						"type": "text"
+					},
+					{
+						"key": "X-Username",
+						"value": "jane_doe",
+						"type": "text"
+					},
+					{
+						"key": "X-Installation-Id",
+						"value": "device-002",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"prompt\": \"This is Microsoft technical support. Your computer is infected with viruses and we need remote access to fix it right now.\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/fraud/",
+					"host": ["{{base_url}}"],
+					"path": ["api", "fraud", ""]
+				}
+			}
+		},
+		{
+			"name": "IRS Tax Scam Test",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-User-Id",
+						"value": "test-user-003",
+						"type": "text"
+					},
+					{
+						"key": "X-Username",
+						"value": "robert_smith",
+						"type": "text"
+					},
+					{
+						"key": "X-Installation-Id",
+						"value": "device-003",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"prompt\": \"This is the Internal Revenue Service. You owe back taxes and must pay immediately or face arrest. Please stay on the line.\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/fraud/",
+					"host": ["{{base_url}}"],
+					"path": ["api", "fraud", ""]
+				}
+			}
+		},
+		{
+			"name": "Lottery Scam Test",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-User-Id",
+						"value": "test-user-004",
+						"type": "text"
+					},
+					{
+						"key": "X-Username",
+						"value": "mary_johnson",
+						"type": "text"
+					},
+					{
+						"key": "X-Installation-Id",
+						"value": "device-004",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"prompt\": \"Congratulations! You've won $1 million in our international lottery. To claim your prize, we need to verify your banking information.\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/fraud/",
+					"host": ["{{base_url}}"],
+					"path": ["api", "fraud", ""]
+				}
+			}
+		},
+		{
+			"name": "Food Recognition Test",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-User-Id",
+						"value": "test-user-005",
+						"type": "text"
+					},
+					{
+						"key": "X-Username",
+						"value": "test_user",
+						"type": "text"
+					},
+					{
+						"key": "X-Installation-Id",
+						"value": "device-005",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "file",
+							"type": "file",
+							"src": "sample-food-image.jpg"
+						}
+					]
+				},
+				"url": {
+					"raw": "{{base_url}}/api/food-recognition/",
+					"host": ["{{base_url}}"],
+					"path": ["api", "food-recognition", ""]
+				}
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		}
+	]
+}
