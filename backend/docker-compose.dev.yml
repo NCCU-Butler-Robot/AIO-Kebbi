@@ -73,11 +73,14 @@ services:
   #     context: ./food_detect
   #     dockerfile: Dockerfile
   #   # Add other configurations as needed
-  # tts:
-  #   build:
-  #     context: ./tts
-  #     dockerfile: Dockerfile
-  #   # Add other configurations as needed
+  tts:
+    build:
+      context: ./tts
+      dockerfile: Dockerfile
+      args:
+        - NONROOT_USERNAME=ubuntu
+        - PROJECT_PATH=/project/tts
+    # Add other configurations as needed
   nginx:
     image: nginx:stable-alpine
     ports:

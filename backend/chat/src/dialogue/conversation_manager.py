@@ -11,7 +11,7 @@ from ..db_manager.database import (
 
 async def handle_chat_message(
     user_id: str, prompt: str, llm_pipeline: LLMPipeline, generate_lock: asyncio.Lock
-) -> str:
+) -> Dict[str, str]:
     conversation = await get_user_latest_conversation(user_id)
     conversation_id: str
     messages_history: List[Dict[str, str]]
@@ -30,6 +30,10 @@ async def handle_chat_message(
     async with generate_lock:
         assistant_response = await asyncio.to_thread(llm_pipeline.generate, messages_history)
 
-    await db_add_message(conversation_id, "assistant", assistant_response)
+    assistant_message_id = await db_add_message(conversation_id, "assistant", assistant_response)
 
-    return assistant_response
+    return {
+        "response": assistant_response,
+        "conversation_id": conversation_id,
+        "message_id": assistant_message_id,
+    }

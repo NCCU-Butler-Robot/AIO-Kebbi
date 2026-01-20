@@ -1,5 +1,6 @@
 import os
 import asyncpg
+import redis.asyncio as redis
 from typing import Dict, Optional
 import uuid
 
@@ -8,10 +9,13 @@ from ..llm_pipeline.pipeline import SYSTEM_PROMPT # New import
 
 # Database connection pool
 pool: asyncpg.Pool | None = None
+# Redis client instance
+redis_client: redis.Redis | None = None
 
 async def connect_to_db():
-    global pool
+    global pool, redis_client
     try:
+        # --- PostgreSQL Connection ---
         pool = await asyncpg.create_pool(
             host=os.getenv("DB_HOST", "db"),
             port=os.getenv("DB_PORT", "5432"),
@@ -20,6 +24,10 @@ async def connect_to_db():
             database=os.getenv("DB_DATABASE_NAME", "kebbi")
         )
         print("[INFO] Database connection pool created successfully.")
+
+        # --- Redis Connection ---
+        redis_client = redis.from_url("redis://redis:6379/0", decode_responses=True)
+        print("[INFO] Redis client created successfully.")
     except Exception as e:
         print(f"[ERROR] Failed to create database connection pool: {e}")
         raise
@@ -29,6 +37,12 @@ async def close_db_connection():
     if pool:
         await pool.close()
         print("[INFO] Database connection pool closed.")
+
+async def close_redis_connection():
+    global redis_client
+    if redis_client:
+        await redis_client.close()
+        print("[INFO] Redis client connection closed.")
 
 async def get_user_latest_conversation(user_uuid: str) -> Optional[Dict]:
     """Retrieves the latest conversation for a given user."""
@@ -50,14 +64,17 @@ async def get_user_latest_conversation(user_uuid: str) -> Optional[Dict]:
 
         messages_records = await conn.fetch(
             """
-            SELECT role, content FROM messages
+            SELECT id, role, content FROM messages
             WHERE conversation_id = $1
             ORDER BY created_at ASC;
             """,
             conversation_record['id']
         )
 
-        messages = [{"role": r["role"], "content": r["content"]} for r in messages_records]
+        messages = [
+            {"id": str(r["id"]), "role": r["role"], "content": r["content"]}
+            for r in messages_records
+        ]
         return {
             "conversation_id": str(conversation_record['id']),
             "title": conversation_record['title'],
@@ -80,17 +97,18 @@ async def create_conversation(user_uuid: str) -> str: # Removed system_prompt pa
         await add_message(str(conversation_id), "system", SYSTEM_PROMPT) # Use imported SYSTEM_PROMPT
         return str(conversation_id)
 
-async def add_message(conversation_id: str, role: str, content: str) -> None:
+async def add_message(conversation_id: str, role: str, content: str) -> str:
     """Adds a message to an existing conversation."""
     if pool is None:
         raise Exception("Database connection pool is not initialized.")
     async with pool.acquire() as conn:
+        message_id = uuid.uuid4()
         await conn.execute(
             """
-            INSERT INTO messages (conversation_id, role, content)
-            VALUES ($1, $2, $3);
+            INSERT INTO messages (id, conversation_id, role, content)
+            VALUES ($1, $2, $3, $4);
             """,
-            uuid.UUID(conversation_id), role, content
+            message_id, uuid.UUID(conversation_id), role, content,
         )
         # Update conversation's updated_at timestamp
         await conn.execute(
@@ -101,3 +119,4 @@ async def add_message(conversation_id: str, role: str, content: str) -> None:
             """,
             uuid.UUID(conversation_id)
         )
+        return str(message_id)
