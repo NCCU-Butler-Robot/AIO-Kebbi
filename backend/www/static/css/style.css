@@ -142,3 +142,48 @@ footer {
         padding: 0.5rem 1rem;
     }
 }
+
+/* Call Timer Styles */
+#callTimerContainer {
+    animation: slideDown 0.3s ease-out;
+}
+
+#callTimer {
+    font-family: 'Courier New', monospace;
+    letter-spacing: 2px;
+}
+
+#callTimerContainer .card {
+    box-shadow: 0 4px 6px rgba(13, 110, 253, 0.15);
+}
+
+/* Pulse animation for active call */
+.call-active #callTimer {
+    animation: pulse-timer 2s infinite;
+}
+
+@keyframes pulse-timer {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+}
+
+/* Recording indicator animation */
+.recording::before {
+    content: '●';
+    color: #dc3545;
+    margin-right: 8px;
+    animation: blink 1s infinite;
+}
+
+@keyframes blink {
+    0%, 50%, 100% {
+        opacity: 1;
+    }
+    25%, 75% {
+        opacity: 0;
+    }
+}

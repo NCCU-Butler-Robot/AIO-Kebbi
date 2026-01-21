@@ -15,6 +15,11 @@ let silenceThreshold = 30; // Adjust based on environment
 let silenceDelay = 2000; // 2 seconds of silence before sending
 let currentAudio = null;
 
+// Call timer variables
+let callStartTime = null;
+let callTimerInterval = null;
+let totalCallDuration = 0;
+
 // Initialize Speech Recognition
 function initSpeechRecognition() {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -157,6 +162,9 @@ async function startCall() {
         updateCallUI(true);
         updateStatus('Call Active - Listening...', 'success');
         
+        // Start call timer
+        startCallTimer();
+        
         addMessageToTranscript('system', 'Call started. Speak naturally, the system will detect pauses and respond automatically.');
     } else {
         alert('Speech Recognition is not available. Please use manual input.');
@@ -189,10 +197,14 @@ function endCall() {
         currentAudio = null;
     }
     
+    // Stop call timer
+    stopCallTimer();
+    
     updateCallUI(false);
     updateStatus('Call Ended', 'secondary');
     
-    addMessageToTranscript('system', 'Call ended.');
+    const duration = formatDuration(totalCallDuration);
+    addMessageToTranscript('system', `Call ended. Total duration: ${duration}`);
 }
 
 // Start recording (legacy - for manual control)
@@ -394,14 +406,26 @@ function updateCallUI(active) {
     stopRecordBtn.disabled = !active;
     recipientPhone.disabled = active;
     
+    const timerContainer = document.getElementById('callTimerContainer');
+    
     if (active) {
         startRecordBtn.classList.add('recording');
         startRecordBtn.innerHTML = '<i class="bi bi-telephone-fill"></i> Call Active';
         stopRecordBtn.innerHTML = '<i class="bi bi-telephone-x-fill"></i> End Call';
+        
+        // Add call-active class for animations
+        if (timerContainer) {
+            timerContainer.classList.add('call-active');
+        }
     } else {
         startRecordBtn.classList.remove('recording');
         startRecordBtn.innerHTML = '<i class="bi bi-telephone-fill"></i> Start Call';
         stopRecordBtn.innerHTML = '<i class="bi bi-telephone-x-fill"></i> End Call';
+        
+        // Remove call-active class
+        if (timerContainer) {
+            timerContainer.classList.remove('call-active');
+        }
     }
 }
 
@@ -416,4 +440,74 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Call Timer Functions
+function startCallTimer() {
+    callStartTime = Date.now();
+    totalCallDuration = 0;
+    
+    // Show timer container
+    const timerContainer = document.getElementById('callTimerContainer');
+    if (timerContainer) {
+        timerContainer.style.display = 'block';
+    }
+    
+    // Update timer every 100ms for smooth display
+    callTimerInterval = setInterval(() => {
+        const elapsed = Date.now() - callStartTime;
+        totalCallDuration = Math.floor(elapsed / 1000); // in seconds
+        updateCallTimerDisplay(totalCallDuration);
+    }, 100);
+}
+
+function stopCallTimer() {
+    if (callTimerInterval) {
+        clearInterval(callTimerInterval);
+        callTimerInterval = null;
+    }
+    
+    // Hide timer container after a delay
+    setTimeout(() => {
+        const timerContainer = document.getElementById('callTimerContainer');
+        if (timerContainer) {
+            timerContainer.style.display = 'none';
+        }
+    }, 3000);
+}
+
+function updateCallTimerDisplay(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    const formatted = [
+        hours.toString().padStart(2, '0'),
+        minutes.toString().padStart(2, '0'),
+        secs.toString().padStart(2, '0')
+    ].join(':');
+    
+    const timerElement = document.getElementById('callTimer');
+    if (timerElement) {
+        timerElement.textContent = formatted;
+    }
+}
+
+function formatDuration(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    if (hours > 0) {
+        return `${hours}h ${minutes}m ${secs}s`;
+    } else if (minutes > 0) {
+        return `${minutes}m ${secs}s`;
+    } else {
+        return `${secs}s`;
+    }
+}
+
+// Get current call duration (for external use)
+function getCurrentCallDuration() {
+    return totalCallDuration;
 }
