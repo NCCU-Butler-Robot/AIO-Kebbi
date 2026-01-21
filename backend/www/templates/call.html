@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+
+{% block title %}Anti-Fraud Call - AIO-Kebbi{% endblock %}
+
+{% block extra_css %}
+<style>
+    .recording {
+        animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    .transcript-box {
+        max-height: 400px;
+        overflow-y: auto;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+    }
+    .message {
+        margin-bottom: 1rem;
+        padding: 0.75rem;
+        border-radius: 8px;
+    }
+    .message.user {
+        background-color: #e3f2fd;
+        margin-left: 2rem;
+    }
+    .message.assistant {
+        background-color: #f1f8e9;
+        margin-right: 2rem;
+    }
+    .audio-player {
+        width: 100%;
+        margin-top: 0.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10 col-lg-8">
+        <div class="card shadow-lg border-0 mt-4">
+            <div class="card-header bg-primary text-white py-3">
+                <h3 class="mb-0">
+                    <i class="bi bi-telephone-fill"></i> Anti-Fraud Call Interface
+                </h3>
+            </div>
+            <div class="card-body p-4">
+                <!-- Recipient Phone Number Input -->
+                <div class="mb-4">
+                    <label for="recipientPhone" class="form-label">
+                        <i class="bi bi-person-badge"></i> Recipient Phone Number
+                    </label>
+                    <div class="input-group input-group-lg">
+                        <span class="input-group-text"><i class="bi bi-telephone"></i></span>
+                        <input type="tel" class="form-control" id="recipientPhone" 
+                               placeholder="Enter recipient's phone number" required>
+                    </div>
+                    <div class="form-text">This number will be used for the anti-fraud call session.</div>
+                </div>
+
+                <hr>
+
+                <!-- Voice Input Controls -->
+                <div class="text-center mb-4">
+                    <h5 class="mb-3">Call Controls</h5>
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-lg btn-success" id="startRecordBtn">
+                            <i class="bi bi-telephone-fill"></i> Start Call
+                        </button>
+                        <button type="button" class="btn btn-lg btn-danger" id="stopRecordBtn" disabled>
+                            <i class="bi bi-telephone-x-fill"></i> End Call
+                        </button>
+                    </div>
+                    <div class="mt-3">
+                        <span class="badge bg-secondary" id="statusBadge">Ready</span>
+                    </div>
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            <i class="bi bi-info-circle"></i> 
+                            The system will automatically detect pauses and respond
+                        </small>
+                    </div>
+                </div>
+
+                <!-- Manual Text Input (Alternative) -->
+                <div class="mb-4">
+                    <label for="manualInput" class="form-label">
+                        <i class="bi bi-keyboard"></i> Or Type Manually
+                    </label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="manualInput" 
+                               placeholder="Type your message here...">
+                        <button class="btn btn-primary" type="button" id="sendTextBtn">
+                            <i class="bi bi-send-fill"></i> Send
+                        </button>
+                    </div>
+                </div>
+
+                <hr>
+
+                <!-- Conversation Transcript -->
+                <div class="mb-4">
+                    <h5 class="mb-3">
+                        <i class="bi bi-chat-dots"></i> Conversation Transcript
+                    </h5>
+                    <div class="transcript-box p-3" id="transcriptBox">
+                        <p class="text-muted text-center">
+                            <i class="bi bi-info-circle"></i> 
+                            Start speaking or typing to begin the conversation...
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Clear Conversation Button -->
+                <div class="text-center">
+                    <button type="button" class="btn btn-outline-secondary" id="clearBtn">
+                        <i class="bi bi-trash"></i> Clear Conversation
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Instructions Card -->
+        <div class="card mt-4 border-info">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> How to Use</h5>
+            </div>
+            <div class="card-body">
+                <ol class="mb-0">
+                    <li>Enter the recipient's phone number</li>
+                    <li>Click "Start Call" to begin the anti-fraud call</li>
+                    <li>Speak naturally - the system will listen continuously</li>
+                    <li>The system automatically detects pauses (2 seconds of silence)</li>
+                    <li>After a pause, your speech is sent to the AI</li>
+                    <li>The AI's response will play automatically</li>
+                    <li>The conversation continues until you click "End Call"</li>
+                    <li>Alternatively, you can type messages manually at any time</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/call.js"></script>
+{% endblock %}

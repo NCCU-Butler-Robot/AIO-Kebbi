@@ -139,6 +139,15 @@ services:
     depends_on:
       db:
         condition: service_healthy
+  www:
+    build:
+      context: ./www
+      dockerfile: Dockerfile
+    restart: on-failure
+    # ports:
+    #   - "8000"
+    depends_on:
+      - auth
   redis:
     image: redis:8-alpine
     restart: on-failure
@@ -152,11 +161,10 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - auth
-      - db
       - chat
       - fraud
-      - socket_gateway
       - redis
+      - www
 volumes:
   pg_data:
 
