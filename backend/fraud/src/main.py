@@ -29,6 +29,7 @@ class NotificationPayload(BaseModel):
     tag: str | None = None
     data: dict | None = None
     silent: bool = False
+    android_priority: str | None = None
 
 
 llm: LLMPipeline | None = None
@@ -105,7 +106,8 @@ async def notify_callee_event(caller_user_id: str, caller_name: str, callee_user
             "caller_name": caller_name,
             "caller_user_id": caller_user_id,
         },
-        silent=True
+        silent=True,
+        android_priority="high"
     )
     gateway_event = {
         "type": "call_notify",

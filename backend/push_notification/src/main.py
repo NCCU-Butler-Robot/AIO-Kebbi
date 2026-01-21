@@ -65,6 +65,7 @@ class NotificationPayload(BaseModel):
     tag: str | None = None
     data: dict | None = None
     silent: bool = False
+    android_priority: str | None = None
 
 
 STREAM_KEY = "push_notification_stream"
@@ -298,25 +299,27 @@ async def send_push(subscription, payload):
             print("Firebase not initialized")
             return False
         try:
-            if not payload.get("silent", False):  # If not silent, include notification
-                message = messaging.Message(
-                    notification=messaging.Notification(
-                        title=payload.get("title", ""), body=payload.get("body", "")
-                    ),
-                    token=endpoint,
-                    data={k: str(v) for k, v in (payload.get("data") or {}).items()},
+            # Start with required args
+            message_kwargs = {
+                "token": endpoint,
+                "data": {k: str(v) for k, v in (payload.get("data") or {}).items()},
+            }
+
+            # Add notification only if not silent
+            if not payload.get("silent", False):
+                message_kwargs["notification"] = messaging.Notification(
+                    title=payload.get("title", ""), body=payload.get("body", "")
                 )
-                response = await asyncio.to_thread(messaging.send, message)
-                print(f"Successfully sent FCM message: {response}")
-                return True
-            else:  # Silent notification, no notification field
-                message = messaging.Message(
-                    token=endpoint,
-                    data={k: str(v) for k, v in (payload.get("data") or {}).items()},
+
+            if payload.get("android_priority"):
+                message_kwargs["android"] = messaging.AndroidConfig(
+                    priority=payload["android_priority"]
                 )
-                response = await asyncio.to_thread(messaging.send, message)
-                print(f"Successfully sent FCM message: {response}")
-                return True
+
+            message = messaging.Message(**message_kwargs)
+            response = await asyncio.to_thread(messaging.send, message)
+            print(f"Successfully sent FCM message: {response}")
+            return True
         except Exception as ex:
             print(f"FCM push failed for {endpoint}: {ex}")
             # For FCM, if invalid token, perhaps remove, but FCM has specific errors
