@@ -16,6 +16,7 @@ dependencies = [
     "python-jose[cryptography]>=3.5.0",
     "python-multipart>=0.0.21",
     "pywebpush>=2.2.0",
+    "redis>=7.1.0",
     "sqlalchemy>=2.0.45",
     "uvicorn>=0.40.0",
 ]

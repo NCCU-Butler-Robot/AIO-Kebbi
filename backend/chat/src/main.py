@@ -42,6 +42,7 @@ async def lifespan(app: FastAPI):
     llm = LLMPipeline()
     tts_service = TTSService()
     food_service = FoodRecognitionService()
+    llm.generate([{"role": "system", "content": "test"}])
     yield
     await database.close_db_connection()
     await database.close_redis_connection()

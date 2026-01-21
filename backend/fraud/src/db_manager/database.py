@@ -1,4 +1,7 @@
 import os
+import json
+import secrets
+import time
 import asyncpg
 import redis.asyncio as redis
 from typing import Dict, Optional
@@ -51,7 +54,7 @@ async def get_user_latest_conversation(user_uuid: str) -> Optional[Dict]:
     async with pool.acquire() as conn:
         conversation_record = await conn.fetchrow(
             """
-            SELECT id, title FROM conversations
+            SELECT id, title, created_at, updated_at FROM conversations
             WHERE user_uuid = $1
             ORDER BY updated_at DESC
             LIMIT 1;
@@ -78,7 +81,9 @@ async def get_user_latest_conversation(user_uuid: str) -> Optional[Dict]:
         return {
             "conversation_id": str(conversation_record['id']),
             "title": conversation_record['title'],
-            "messages": messages
+            "messages": messages,
+            "created_at": conversation_record['created_at'],
+            "updated_at": conversation_record['updated_at']
         }
 
 async def create_conversation(user_uuid: str) -> str: # Removed system_prompt parameter
@@ -120,3 +125,19 @@ async def add_message(conversation_id: str, role: str, content: str) -> str:
             uuid.UUID(conversation_id)
         )
         return str(message_id)
+
+async def set_call_token(caller_id: str, callee_id: str, expiration_seconds: int = 60):
+    """Sets a call token for a user in Redis with an expiration time."""
+    if redis_client is None:
+        raise Exception("Redis client is not initialized.")
+    
+    token = secrets.token_urlsafe(32)
+    await redis_client.set(
+        f"call_token:{token}",
+        json.dumps({
+            "caller": caller_id,
+            "callee": callee_id,
+        }),
+        ex=300,
+    )
+    return token

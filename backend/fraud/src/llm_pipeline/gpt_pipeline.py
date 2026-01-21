@@ -40,7 +40,7 @@ Remember, your goal is to make them reveal as much as possible about their scam 
 
 
 class GPTPipeline:
-    def __init__(self, api_key: str = None, model: str = DEFAULT_MODEL):
+    def __init__(self, api_key: str | None = None, model: str = DEFAULT_MODEL):
         """
         初始化GPT管道
         

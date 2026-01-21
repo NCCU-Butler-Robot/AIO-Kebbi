@@ -2,13 +2,15 @@ import asyncio
 import json
 from contextlib import asynccontextmanager
 from typing import Optional
+from datetime import datetime, timezone
+import uuid
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
 # Import the database module itself to access its global variables correctly.
-from .db_manager import database
+from .db_manager import database, get_user_latest_conversation
 
 # Import specific functions needed.
 from .dialogue.conversation_manager import handle_fraud_chat_message  # Updated import
@@ -19,6 +21,14 @@ from .tts_service import TTSService
 class FraudMessage(BaseModel):
     prompt: str
     phone_number: str  # 受話者的手機號碼
+
+class NotificationPayload(BaseModel):
+    title: str | None = None
+    body: str | None = None
+    icon: str | None = None
+    tag: str | None = None
+    data: dict | None = None
+    silent: bool = False
 
 
 llm: LLMPipeline | None = None
@@ -37,8 +47,8 @@ async def get_user_by_phone(phone_number: str) -> Optional[dict]:
         dict: 用戶資訊 (包含 name, username 等)，如果找不到則返回 None
     """
     try:
-        if database.postgres_pool:
-            async with database.postgres_pool.acquire() as conn:
+        if database.pool:
+            async with database.pool.acquire() as conn:
                 query = """
                     SELECT uuid, username, name, email, phone_number 
                     FROM users 
@@ -85,34 +95,32 @@ async def lifespan(app: FastAPI):
     await database.close_redis_connection()
 
 
-async def publish_events(user_id: str, installation_id: str, text: str, message_id: str, conversation_id: str):
+async def notify_callee_event(caller_user_id: str, caller_name: str, callee_user_id: str, conversation_id: str, call_token: str):
     """Publishes events to Redis for other services to consume."""
     # Event for the socket gateway to broadcast the text message
+    notification_payload = NotificationPayload(
+        data={
+            "type": "incoming_call",
+            "call_token": call_token,
+            "caller_name": caller_name,
+            "caller_user_id": caller_user_id,
+        },
+        silent=True
+    )
     gateway_event = {
-        "type": "text_broadcast",
+        "type": "call_notify",
         "service": "anti-fraud",
-        "user_id": user_id,
+        "caller_user_id": caller_user_id,
+        "callee_user_id": callee_user_id,
         "conversation_id": conversation_id,
-        "message_id": message_id,
-        "text": text,
-    }
-    # Event for the TTS service to generate audio for the specific device
-    tts_event = {
-        "type": "tts_generation_request",
-        "service": "anti-fraud",
-        "user_id": user_id,
-        "installation_id": installation_id,
-        "conversation_id": conversation_id,
-        "message_id": message_id,
-        "text": text,
+        "payload": json.dumps(notification_payload.model_dump())
     }
     # Ensure the client is available before publishing
     if database.redis_client:
         # XADD adds events to a stream. The '*' generates a unique ID.
-        await database.redis_client.xadd("app_stream", gateway_event)
-        await database.redis_client.xadd("app_stream", tts_event)
+        await database.redis_client.xadd("push_notification_stream", gateway_event)
         print(
-            f"[Anti-Fraud Service] Added text_broadcast and tts_generation_request to stream for user {user_id}"
+            f"[Anti-Fraud Service] Added call_notify to push_notification_stream for caller {caller_user_id} > callee {callee_user_id}"
         )
     else:
         print(
@@ -161,6 +169,26 @@ async def health_check():
             "error": str(e)
         }
 
+async def check_conversation_duration(conversation, caller_user_id, target_user, max_duration):
+    """檢查對話持續時間是否超過限制"""
+    target_name = target_user.get("name", target_user.get("username", "Unknown"))
+    target_id = target_user.get("uuid", "")
+
+    if conversation:
+        duration = (datetime.now(timezone.utc) - conversation["created_at"]).total_seconds()
+        conversation["duration"] = duration
+        
+        # Check if the conversation already passed 2 minutes and 45 seconds
+        if duration > max_duration:
+            print(f"[INFO] Conversation duration {duration} seconds exceeded limit of {max_duration} seconds for {target_name} ({target_id})")
+            # Call publish_events to notify socket gateway to end the call
+            # This requires a message_id, but we may not have one yet.
+            # We will use a placeholder or decide on a better strategy.
+            # For now, let's assume we can create a temporary or system message id.
+
+            return False # Indicate that the duration limit has been exceeded
+    return True # Duration is within limit
+
 
 @app.post("/api/fraud/")
 async def fraud_chat_message(
@@ -192,6 +220,24 @@ async def fraud_chat_message(
         )
     
     target_name = target_user.get("name", target_user.get("username", "Unknown"))
+    target_id = target_user.get("uuid", "")
+
+    conversation = await get_user_latest_conversation(target_id)
+    in_time_limit = await check_conversation_duration(conversation, x_user_id, target_user, max_duration=165)
+    if not in_time_limit:
+        call_token = await database.set_call_token(x_user_id, target_id)
+        await notify_callee_event(
+            caller_user_id=x_user_id,
+            caller_name=x_username,
+            callee_user_id=target_id,
+            call_token=call_token,
+            conversation_id=conversation.get("conversation_id", "") if conversation else ""
+        )
+        return {
+            "status": "initiate_socketio",
+            "call_token": call_token
+        }
+
     print(f"[INFO] AI will role-play as: {target_name} ({message.phone_number})")
 
     # 處理對話，AI扮演目標用戶
@@ -202,11 +248,27 @@ async def fraud_chat_message(
         target_phone=message.phone_number,
         llm_pipeline=llm,
         generate_lock=generate_lock,
+        conversation=conversation,
     )
     
     assistant_response = response_data["response"]
     conversation_id = response_data["conversation_id"]
     assistant_message_id = response_data["message_id"]
+
+    in_time_limit = await check_conversation_duration(conversation, x_user_id, target_user, max_duration=165)
+    if not in_time_limit:
+        # await publish_events(
+        #     caller_user_id=x_user_id,
+        #     callee_user_id=target_id,
+        #     text="Conversation duration exceeded limit.",
+        #     conversation_id=conversation.get("conversation_id", "") if conversation else ""
+        # )
+        call_token = await database.set_call_token(x_user_id, target_id)
+        return {
+            "status": "initiate_socketio",
+            "call_token": call_token
+        }
+
 
     # Generate audio from text using TTS service
     try:
@@ -229,10 +291,10 @@ async def fraud_chat_message(
             }
         )
         
-        # Asynchronously publish events to Redis (for socket gateway)
-        asyncio.create_task(
-            publish_events(x_user_id, x_installation_id, assistant_response, assistant_message_id, conversation_id)
-        )
+        # # Asynchronously publish events to Redis (for socket gateway)
+        # asyncio.create_task(
+        #     publish_events(x_user_id, x_installation_id, assistant_response, assistant_message_id, conversation_id)
+        # )
         
         return response
         

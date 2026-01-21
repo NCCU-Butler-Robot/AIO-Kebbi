@@ -12,14 +12,7 @@ from pywebpush import WebPushException, webpush
 
 # from apns2.client import APNsClient
 # from apns2.payload import Payload
-from .db_manager.database import (
-    close_db_connection,
-    connect_to_db,
-    delete_subscription,
-    get_all_subscriptions,
-    get_subscriptions_by_user,
-    save_subscription,
-)
+from .db_manager import database
 
 # VAPID keys - should be set in environment
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY")
@@ -62,22 +55,109 @@ class SubscribeRequest(BaseModel):
     pushSubscription: PushSubscription | None = None
     fcm_token: str | None = None
     apns_token: str | None = None
-    platform: str # "web", "fcm", "apns"
+    platform: str  # "web", "fcm", "apns"
 
 
 class NotificationPayload(BaseModel):
-    title: str
-    body: str
+    title: str | None = None
+    body: str | None = None
     icon: str | None = None
     tag: str | None = None
     data: dict | None = None
+    silent: bool = False
+
+
+STREAM_KEY = "push_notification_stream"
+BLOCK_MS = 5000  # wait up to 5 seconds
+READ_COUNT = 10  # max number of events to read at once
+
+
+async def process_push_stream():
+    """
+    Continuously read events from Redis stream and send notifications to the correct user.
+    """
+    last_id = "0"  # start from the beginning. Use "$" to read only new events.
+    print("[Stream Consumer] Starting...")
+
+    while True:
+        try:
+            # Read events from Redis stream
+            response = await database.redis_client.xread(
+                {STREAM_KEY: last_id}, block=BLOCK_MS, count=READ_COUNT
+            )
+            if not response:
+                continue  # nothing new, loop again
+
+            for stream_name, events in response:
+                for event_id, fields in events:
+                    last_id = event_id  # update last_id to avoid reprocessing
+
+                    # Decode Redis fields (they might be bytes)
+                    event = dict(fields)
+
+                    payload_json = event.get("payload")
+                    callee_user_id = event.get("callee_user_id")
+
+                    if payload_json and callee_user_id:
+                        try:
+                            # Deserialize payload back to Python dict
+                            payload = json.loads(payload_json)
+                        except json.JSONDecodeError as e:
+                            print(
+                                f"[Stream] Failed to parse payload JSON: {payload_json}, error: {e}"
+                            )
+                            continue
+
+                        try:
+                            # Send notification using your existing function
+                            sent, failed = await send_push_to_user(
+                                callee_user_id, payload
+                            )
+                            print(
+                                f"[Stream] Notification sent to {callee_user_id}: {sent} sent, {failed} failed"
+                            )
+                        except Exception as e:
+                            print(
+                                f"[Stream] Failed sending push to {callee_user_id}: {e}"
+                            )
+                    else:
+                        print(
+                            f"[Stream] Invalid event, missing payload or callee_user_id: {event}"
+                        )
+
+        except asyncio.CancelledError:
+            print("[Stream Consumer] Task cancelled, shutting down...")
+            break  # allow graceful shutdown
+        except Exception as e:
+            print(f"[Stream] Error reading from Redis stream: {e}")
+            await asyncio.sleep(1)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await connect_to_db()
-    yield
-    await close_db_connection()
+    global llm, tts_service
+    await database.connect_to_db()
+    # Check if the redis_client was successfully initialized before using it.
+    if database.redis_client:
+        await database.redis_client.ping()  # Establishes connection and checks health
+    else:
+        raise RuntimeError(
+            "Redis client could not be initialized. Application cannot start."
+        )
+    stream_task = asyncio.create_task(process_push_stream())
+    try:
+        yield  # run the app
+    finally:
+        # Gracefully cancel the consumer when app shuts down
+        stream_task.cancel()
+        try:
+            await stream_task
+        except asyncio.CancelledError:
+            print("[Stream Consumer] Cancelled on shutdown")
+
+        # Close DB / Redis connections
+        await database.close_db_connection()
+        await database.close_redis_connection()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -94,22 +174,20 @@ async def subscribe(
     print("Subscription request: ", subscription)
     try:
         if not x_user_id:
-            raise HTTPException(
-                status_code=400, detail="X-User-Id header is required."
-            )
+            raise HTTPException(status_code=400, detail="X-User-Id header is required.")
         user_id = x_user_id
         platform = subscription.platform
         if subscription.pushSubscription:
             push_sub = subscription.pushSubscription.model_dump()
-            await save_subscription(user_id, push_sub, platform)
+            await database.save_subscription(user_id, push_sub, platform)
         elif subscription.fcm_token:
             # For FCM, create a dict with endpoint as token, no keys
             push_sub = {"endpoint": subscription.fcm_token}
-            await save_subscription(user_id, push_sub, "fcm")
+            await database.save_subscription(user_id, push_sub, "fcm")
         elif subscription.apns_token:
             # For APNs, create a dict with endpoint as token, no keys
             push_sub = {"endpoint": subscription.apns_token}
-            await save_subscription(user_id, push_sub, "apns")
+            await database.save_subscription(user_id, push_sub, "apns")
         else:
             raise HTTPException(
                 status_code=400,
@@ -127,7 +205,7 @@ async def notify_all(payload: NotificationPayload):
     """Send a push notification to all users. Payload example: { "title": "System Alert", "body": "New update available.", "icon": "/static/icons/alert.png", "tag": "web-push", "data": { "url": "/updates" } }"""
     print(payload)
     payload_dict = payload.model_dump()  # convert to dict
-    results = await get_all_subscriptions()
+    results = await database.get_all_subscriptions()
 
     if not results:
         print("WARNING: No subscriptions found. Notification not sent.")
@@ -146,7 +224,7 @@ async def notify_user(user_id: str, payload: NotificationPayload):
     """Send a push notification to a specific user."""
     print(f"Notifying user {user_id}: {payload}")
     payload_dict = payload.model_dump()
-    results = await get_subscriptions_by_user(user_id)
+    results = await database.get_subscriptions_by_user(user_id)
 
     if not results:
         print(
@@ -166,7 +244,7 @@ async def notify_user(user_id: str, payload: NotificationPayload):
 
 async def send_push_to_user(user_id: str, payload: dict):
     """Send push notifications to all subscriptions of a specific user."""
-    results = await get_subscriptions_by_user(user_id)
+    results = await database.get_subscriptions_by_user(user_id)
     if not results:
         print(f"WARNING: No subscriptions found for user {user_id}.")
         return 0, 0  # sent, failed
@@ -209,7 +287,7 @@ async def send_push(subscription, payload):
             if ex.response is not None and ex.response.status_code == 410:
                 print("Subscription is gone")
                 # Remove subscription from database
-                await delete_subscription(endpoint, platform)
+                await database.delete_subscription(endpoint, platform)
                 print(f"Removed expired subscription: {endpoint}")
             else:
                 print(f"Push failed for {endpoint}: {ex}")
@@ -220,22 +298,31 @@ async def send_push(subscription, payload):
             print("Firebase not initialized")
             return False
         try:
-            message = messaging.Message(
-                notification=messaging.Notification(
-                    title=payload.get("title", ""), body=payload.get("body", "")
-                ),
-                token=endpoint,
-                data={k: str(v) for k, v in (payload.get("data") or {}).items()},
-            )
-            response = await asyncio.to_thread(messaging.send, message)
-            print(f"Successfully sent FCM message: {response}")
-            return True
+            if not payload.get("silent", False):  # If not silent, include notification
+                message = messaging.Message(
+                    notification=messaging.Notification(
+                        title=payload.get("title", ""), body=payload.get("body", "")
+                    ),
+                    token=endpoint,
+                    data={k: str(v) for k, v in (payload.get("data") or {}).items()},
+                )
+                response = await asyncio.to_thread(messaging.send, message)
+                print(f"Successfully sent FCM message: {response}")
+                return True
+            else:  # Silent notification, no notification field
+                message = messaging.Message(
+                    token=endpoint,
+                    data={k: str(v) for k, v in (payload.get("data") or {}).items()},
+                )
+                response = await asyncio.to_thread(messaging.send, message)
+                print(f"Successfully sent FCM message: {response}")
+                return True
         except Exception as ex:
             print(f"FCM push failed for {endpoint}: {ex}")
             # For FCM, if invalid token, perhaps remove, but FCM has specific errors
             if "registration-token-not-registered" in str(ex):
                 print("FCM token invalid, removing")
-                await delete_subscription(endpoint, platform)
+                await database.delete_subscription(endpoint, platform)
             return False
     elif platform == "apns":
         # APNs Token

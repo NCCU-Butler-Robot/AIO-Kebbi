@@ -1,20 +1,30 @@
 import asyncio
-from typing import List, Dict
+from typing import Dict, List, Union
 
-from ..llm_pipeline import LLMPipeline, SYSTEM_PROMPT
+from ..db_manager.database import (
+    add_message as db_add_message,  # Alias to avoid name conflict
+)
+from ..db_manager.database import (
+    create_conversation as db_create_conversation,  # Alias to avoid name conflict
+)
 from ..db_manager.database import (
     get_user_latest_conversation,
-    create_conversation as db_create_conversation, # Alias to avoid name conflict
-    add_message as db_add_message, # Alias to avoid name conflict
 )
+from ..llm_pipeline import SYSTEM_PROMPT, LLMPipeline
 
 
 async def handle_fraud_chat_message(
-    user_id: str, prompt: str, target_name: str, target_phone: str, llm_pipeline: LLMPipeline, generate_lock: asyncio.Lock
+    user_id: str,
+    prompt: str,
+    target_name: str,
+    target_phone: str,
+    llm_pipeline: LLMPipeline,
+    generate_lock: asyncio.Lock,
+    conversation,
 ) -> Dict[str, str]:
     """
     處理反詐騙對話訊息，AI會扮演目標用戶
-    
+
     Args:
         user_id: 詐騙犯的用戶ID
         prompt: 詐騙犯的輸入
@@ -22,17 +32,16 @@ async def handle_fraud_chat_message(
         target_phone: 目標受話者手機號碼
         llm_pipeline: LLM管道
         generate_lock: 生成鎖
-    
+
     Returns:
         Dict: 包含回應、對話ID、訊息ID等資訊
     """
-    conversation = await get_user_latest_conversation(user_id)
     conversation_id: str
     messages_history: List[Dict[str, str]]
 
     if conversation:
-        conversation_id = conversation['conversation_id']
-        messages_history = conversation['messages']
+        conversation_id = conversation["conversation_id"]
+        messages_history = conversation["messages"]
 
     else:
         conversation_id = await db_create_conversation(user_id)
@@ -45,10 +54,15 @@ async def handle_fraud_chat_message(
     async with generate_lock:
         # 使用角色扮演的generate方法
         assistant_response = await llm_pipeline.generate_with_role(
-            prompt, target_name, target_phone, messages_history[:]  # 排除剛加入的user message
+            prompt,
+            target_name,
+            target_phone,
+            messages_history[:],  # 排除剛加入的user message
         )
 
-    assistant_message_id = await db_add_message(conversation_id, "assistant", assistant_response)
+    assistant_message_id = await db_add_message(
+        conversation_id, "assistant", assistant_response
+    )
 
     return {
         "response": assistant_response,
