@@ -4,7 +4,7 @@
 requireAuth();
 
 // Speech Recognition setup
-let recognition = null;
+let recognition = null;let isRecognitionRunning = false; // New flag
 let isRecording = false;
 let isCallActive = false;
 let silenceTimer = null;
@@ -31,6 +31,7 @@ function initSpeechRecognition() {
         recognition.lang = 'en-US'; // English for anti-fraud
         
         recognition.onstart = function() {
+            isRecognitionRunning = true; // Set flag
             console.log('Speech recognition started');
         };
         
@@ -59,29 +60,36 @@ function initSpeechRecognition() {
         
         recognition.onerror = function(event) {
             console.error('Speech recognition error:', event.error);
+            
+            // If error occurs, the 'onend' event will still fire next.
+            // We don't need to call .start() here anymore; let onend handle the restart.
             if (event.error === 'no-speech') {
-                // Restart recognition if no speech detected
-                if (isCallActive) {
-                    setTimeout(() => {
-                        if (isCallActive) {
-                            recognition.start();
-                        }
-                    }, 100);
-                }
+                updateStatus('Listening...', 'success');
+            } else if (event.error === 'network' || event.error === 'audio-capture') {
+                // For more critical errors, update status and potentially end the call
+                updateStatus('Error: ' + event.error + '. Please check microphone/network.', 'danger');
+                endCall(); 
             } else {
                 updateStatus('Error: ' + event.error, 'warning');
             }
         };
         
         recognition.onend = function() {
+            isRecognitionRunning = false; // Reset flag
             console.log('Speech recognition ended');
-            // Automatically restart if call is still active
+        
+            // Automatically restart if call is still active and NOT already running
             if (isCallActive) {
                 setTimeout(() => {
-                    if (isCallActive) {
-                        recognition.start();
+                    // Re-check both flags before starting
+                    if (isCallActive && !isRecognitionRunning) {
+                        try {
+                            recognition.start();
+                        } catch (e) {
+                            console.warn("Recognition start skipped: already active");
+                        }
                     }
-                }, 100);
+                }, 300); // Increased delay slightly for stability
             }
         };
         
@@ -142,6 +150,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Start call (continuous monitoring)
 async function startCall() {
+    if (isCallActive || isRecognitionRunning) return; // Prevent double starts
+    
     if (!recipientPhone.value.trim()) {
         alert('Please enter a recipient phone number first!');
         recipientPhone.focus();
@@ -158,14 +168,18 @@ async function startCall() {
     }
     
     if (recognition) {
-        recognition.start();
-        updateCallUI(true);
-        updateStatus('Call Active - Listening...', 'success');
-        
-        // Start call timer
-        startCallTimer();
-        
-        addMessageToTranscript('system', 'Call started. Speak naturally, the system will detect pauses and respond automatically.');
+        try {
+            recognition.start();
+            updateCallUI(true);
+            updateStatus('Call Active - Listening...', 'success');
+            
+            // Start call timer
+            startCallTimer();
+            
+            addMessageToTranscript('system', 'Call started. Speak naturally, the system will detect pauses and respond automatically.');
+        } catch (e) {
+            console.error("Recognition failed to start:", e);
+        }
     } else {
         alert('Speech Recognition is not available. Please use manual input.');
         isCallActive = false;
