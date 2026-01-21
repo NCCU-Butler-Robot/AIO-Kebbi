@@ -5,6 +5,7 @@ from typing import Optional
 from datetime import datetime, timezone
 import uuid
 
+import httpx
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -35,6 +36,12 @@ class NotificationPayload(BaseModel):
 llm: LLMPipeline | None = None
 tts_service: TTSService | None = None
 generate_lock = asyncio.Lock()
+
+# 詐騙檢測API配置
+FRAUD_DETECTION_API_URL = "http://vision.futuremedialab.tw:8080/predict"
+
+# 用於存儲每個對話的檢測結果
+conversation_detection_results = {}
 
 
 async def get_user_by_phone(phone_number: str) -> Optional[dict]:
@@ -67,6 +74,110 @@ async def get_user_by_phone(phone_number: str) -> Optional[dict]:
         return None
     except Exception as e:
         print(f"[ERROR] Failed to query user by phone {phone_number}: {e}")
+        return None
+
+
+async def format_conversation_for_detection(conversation_id: str) -> str:
+    """
+    格式化對話歷史為詐騙檢測API所需的格式
+    格式: caller:...receiver:...caller:...receiver:...
+    注意：只包含user和assistant的對話內容，不包含system prompt
+    
+    Args:
+        conversation_id: 對話ID
+        
+    Returns:
+        str: 格式化後的對話文本
+    """
+    try:
+        if database.pool:
+            async with database.pool.acquire() as conn:
+                query = """
+                    SELECT role, content, created_at 
+                    FROM messages 
+                    WHERE conversation_id = $1 
+                    AND role IN ('user', 'assistant')
+                    ORDER BY created_at ASC
+                """
+                messages = await conn.fetch(query, conversation_id)
+                
+                formatted_parts = []
+                for msg in messages:
+                    role = msg["role"]
+                    content = msg["content"].strip()
+                    
+                    # user對應caller, assistant對應receiver
+                    if role == "user":
+                        formatted_parts.append(f"caller: {content}")
+                    elif role == "assistant":
+                        formatted_parts.append(f"receiver: {content}")
+                
+                formatted_text = " ".join(formatted_parts)
+                print(f"[DEBUG] Formatted conversation for detection ({len(messages)} messages): {formatted_text[:200]}...")
+                return formatted_text
+        return ""
+    except Exception as e:
+        print(f"[ERROR] Failed to format conversation {conversation_id}: {e}")
+        return ""
+
+
+async def call_fraud_detection_api(conversation_text: str) -> bool | None:
+    """
+    調用詐騙檢測API
+    
+    Args:
+        conversation_text: 格式化後的對話文本
+        
+    Returns:
+        bool: True表示可能是詐騙，False表示正常對話，None表示API調用失敗
+    """
+    try:
+        print(f"[DEBUG] Calling fraud detection API with text length: {len(conversation_text)}")
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                FRAUD_DETECTION_API_URL,
+                json={"text": conversation_text},
+                headers={"Content-Type": "application/json"}
+            )
+            
+            print(f"[DEBUG] Fraud detection API status: {response.status_code}")
+            print(f"[DEBUG] Response content type: {response.headers.get('content-type')}")
+            print(f"[DEBUG] Raw response: {response.text}")
+            
+            if response.status_code == 200:
+                # API返回純文本 "True" 或 "False"
+                response_text = response.text.strip()
+                
+                if response_text.lower() == "true":
+                    prediction = True
+                    print(f"[INFO] Fraud detection result: True (possible scam)")
+                elif response_text.lower() == "false":
+                    prediction = False
+                    print(f"[INFO] Fraud detection result: False (normal conversation)")
+                else:
+                    # 如果返回其他內容，嘗試解析JSON
+                    try:
+                        result = response.json()
+                        print(f"[DEBUG] Parsed JSON response: {result}")
+                        prediction = result.get("prediction", result.get("result", None))
+                        print(f"[INFO] Fraud detection result: {prediction}")
+                    except json.JSONDecodeError:
+                        print(f"[ERROR] Unexpected response format: {response_text}")
+                        return None
+                
+                return prediction
+            else:
+                print(f"[WARNING] Fraud detection API returned status {response.status_code}")
+                print(f"[WARNING] Response body: {response.text}")
+                return None
+    except httpx.TimeoutException:
+        print(f"[ERROR] Fraud detection API timeout")
+        return None
+    except httpx.RequestError as e:
+        print(f"[ERROR] Fraud detection API request error: {e}")
+        return None
+    except Exception as e:
+        print(f"[ERROR] Failed to call fraud detection API: {e}")
         return None
 
 
@@ -257,19 +368,73 @@ async def fraud_chat_message(
     conversation_id = response_data["conversation_id"]
     assistant_message_id = response_data["message_id"]
 
-    in_time_limit = await check_conversation_duration(conversation, x_user_id, target_user, max_duration=165)
+    # 每次GPT回覆後，調用詐騙檢測API
+    conversation_text = await format_conversation_for_detection(conversation_id)
+    if conversation_text:
+        detection_result = await call_fraud_detection_api(conversation_text)
+        
+        # 初始化該對話的檢測結果列表（如果還沒有）
+        if conversation_id not in conversation_detection_results:
+            conversation_detection_results[conversation_id] = []
+        
+        # 存儲檢測結果
+        if detection_result is not None:
+            conversation_detection_results[conversation_id].append(detection_result)
+            print(f"[INFO] Conversation {conversation_id} detection results so far: {conversation_detection_results[conversation_id]}")
+
+    # 檢查對話是否超過2.5分鐘（150秒）
+    in_time_limit = await check_conversation_duration(conversation, x_user_id, target_user, max_duration=150)
     if not in_time_limit:
-        # await publish_events(
-        #     caller_user_id=x_user_id,
-        #     callee_user_id=target_id,
-        #     text="Conversation duration exceeded limit.",
-        #     conversation_id=conversation.get("conversation_id", "") if conversation else ""
-        # )
-        call_token = await database.set_call_token(x_user_id, target_id)
-        return {
-            "status": "initiate_socketio",
-            "call_token": call_token
-        }
+        # 超過2.5分鐘，根據檢測結果決定是否繼續
+        results = conversation_detection_results.get(conversation_id, [])
+        
+        if results:
+            true_count = sum(1 for r in results if r is True)
+            false_count = sum(1 for r in results if r is False)
+            
+            print(f"[INFO] Conversation {conversation_id} - True: {true_count}, False: {false_count}")
+            
+            # False比較多，表示不太可能是詐騙，需要真人接電話
+            if false_count > true_count:
+                print(f"[INFO] Fraud detection indicates normal conversation. Notifying real user to take over.")
+                call_token = await database.set_call_token(x_user_id, target_id)
+                await notify_callee_event(
+                    caller_user_id=x_user_id,
+                    caller_name=x_username,
+                    callee_user_id=target_id,
+                    call_token=call_token,
+                    conversation_id=conversation_id
+                )
+                
+                # 清理該對話的檢測結果
+                conversation_detection_results.pop(conversation_id, None)
+                
+                return {
+                    "status": "initiate_socketio",
+                    "call_token": call_token,
+                    "reason": "normal_conversation_detected"
+                }
+            else:
+                # True比較多或相等，繼續對話
+                print(f"[INFO] Fraud detection indicates potential scam. Continuing AI conversation.")
+                # 繼續處理，返回正常的音頻響應
+        else:
+            # 如果沒有檢測結果，預設觸發通知（安全起見）
+            print(f"[WARNING] No detection results available. Notifying real user as precaution.")
+            call_token = await database.set_call_token(x_user_id, target_id)
+            await notify_callee_event(
+                caller_user_id=x_user_id,
+                caller_name=x_username,
+                callee_user_id=target_id,
+                call_token=call_token,
+                conversation_id=conversation_id
+            )
+            
+            return {
+                "status": "initiate_socketio",
+                "call_token": call_token,
+                "reason": "no_detection_results"
+            }
 
 
     # Generate audio from text using TTS service
