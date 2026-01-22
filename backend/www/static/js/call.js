@@ -28,6 +28,7 @@ let callStartTime = null;
 let callTimerInterval = null;
 let totalCallDuration = 0;
 let call_api_counter = 0;
+let pauseRecognitionDuringPlayback = true;
 
 // --- Initialize Speech Recognition ---
 // --- Initialize Speech Recognition ---
@@ -290,10 +291,36 @@ async function handleAudioResponse(response) {
 function playAudio(audioBlob) {
     const audioUrl = URL.createObjectURL(audioBlob);
     currentAudio = new Audio(audioUrl);
-    currentAudio.onended = () => { if (isCallActive) updateStatus('Call Active - Listening...', 'success'); };
-    currentAudio.onerror = (e) => console.error(e);
-    currentAudio.play().catch(e => console.error(e));
+
+    // Pause recognition if the flag is true
+    if (pauseRecognitionDuringPlayback && recognition && isRecognitionRunning) {
+        recognition.stop();
+        shouldRestartRecognition = false;
+        console.log('Speech recognition paused during audio playback');
+    }
+
+    currentAudio.onended = () => {
+        console.log('Audio playback ended');
+
+        // Resume recognition if the flag is true and call is active
+        if (pauseRecognitionDuringPlayback && recognition && isCallActive && !isRecognitionRunning) {
+            try {
+                recognition.start();
+                shouldRestartRecognition = true;
+                console.log('Speech recognition resumed after audio playback');
+            } catch (e) {
+                console.warn('Failed to resume recognition:', e);
+            }
+        }
+
+        if (isCallActive) updateStatus('Call Active - Listening...', 'success');
+    };
+
+    currentAudio.onerror = (e) => console.error('Audio playback error:', e);
+
+    currentAudio.play().catch(e => console.error('Failed to play audio:', e));
 }
+
 
 // --- Transcript / UI Helpers ---
 function addMessageToTranscript(sender, text, audioBlob = null) {
