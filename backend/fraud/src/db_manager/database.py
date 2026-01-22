@@ -47,27 +47,29 @@ async def close_redis_connection():
         await redis_client.close()
         print("[INFO] Redis client connection closed.")
 
-async def get_user_latest_conversation(user_uuid: str) -> Optional[Dict]:
+async def get_user_latest_conversation(user_uuid: str, target_user_uuid: str) -> Optional[Dict]:
     """Retrieves the latest conversation for a given user."""
     if pool is None:
         raise Exception("Database connection pool is not initialized.")
     async with pool.acquire() as conn:
         conversation_record = await conn.fetchrow(
             """
-            SELECT id, title, created_at, updated_at FROM conversations
+            SELECT id, title, created_at, updated_at FROM fraud_conversations
             WHERE user_uuid = $1
+            AND target_user_uuid = $2
             ORDER BY updated_at DESC
             LIMIT 1;
             """,
-            uuid.UUID(user_uuid)
+            uuid.UUID(user_uuid), uuid.UUID(target_user_uuid)
         )
 
         if not conversation_record:
+            print(f"[INFO] No conversation found for user {user_uuid} with target {target_user_uuid}")
             return None
 
         messages_records = await conn.fetch(
             """
-            SELECT id, role, content FROM messages
+            SELECT id, role, content FROM fraud_messages
             WHERE conversation_id = $1
             ORDER BY created_at ASC;
             """,
@@ -86,7 +88,7 @@ async def get_user_latest_conversation(user_uuid: str) -> Optional[Dict]:
             "updated_at": conversation_record['updated_at']
         }
 
-async def create_conversation(user_uuid: str) -> str: # Removed system_prompt parameter
+async def create_conversation(user_uuid: str, target_user_uuid: str) -> str: # Removed system_prompt parameter
     """Creates a new conversation and adds the system message."""
     if pool is None:
         raise Exception("Database connection pool is not initialized.")
@@ -94,11 +96,12 @@ async def create_conversation(user_uuid: str) -> str: # Removed system_prompt pa
         conversation_id = uuid.uuid4()
         await conn.execute(
             """
-            INSERT INTO conversations (id, user_uuid)
-            VALUES ($1, $2);
+            INSERT INTO fraud_conversations (id, user_uuid, target_user_uuid)
+            VALUES ($1, $2, $3);
             """,
-            conversation_id, uuid.UUID(user_uuid)
+            conversation_id, uuid.UUID(user_uuid), uuid.UUID(target_user_uuid)
         )
+        print(f"[INFO] Created new conversation {conversation_id} for user {user_uuid} with target {target_user_uuid}")
         # await add_message(str(conversation_id), "system", SYSTEM_PROMPT) # Use imported SYSTEM_PROMPT
         return str(conversation_id)
 
@@ -110,7 +113,7 @@ async def add_message(conversation_id: str, role: str, content: str) -> str:
         message_id = uuid.uuid4()
         await conn.execute(
             """
-            INSERT INTO messages (id, conversation_id, role, content)
+            INSERT INTO fraud_messages (id, conversation_id, role, content)
             VALUES ($1, $2, $3, $4);
             """,
             message_id, uuid.UUID(conversation_id), role, content,
@@ -118,7 +121,7 @@ async def add_message(conversation_id: str, role: str, content: str) -> str:
         # Update conversation's updated_at timestamp
         await conn.execute(
             """
-            UPDATE conversations
+            UPDATE fraud_conversations
             SET updated_at = NOW()
             WHERE id = $1;
             """,
@@ -138,6 +141,6 @@ async def set_call_token(caller_id: str, callee_id: str, expiration_seconds: int
             "caller": caller_id,
             "callee": callee_id,
         }),
-        ex=300,
+        ex=expiration_seconds,
     )
     return token

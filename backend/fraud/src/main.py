@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 from datetime import datetime, timezone
 import uuid
+import urllib.parse
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException
@@ -22,6 +23,7 @@ from .tts_service import TTSService
 class FraudMessage(BaseModel):
     prompt: str
     phone_number: str  # 受話者的手機號碼
+    initiate_conversation: Optional[bool] = False
 
 class NotificationPayload(BaseModel):
     title: str | None = None
@@ -94,7 +96,7 @@ async def format_conversation_for_detection(conversation_id: str) -> str:
             async with database.pool.acquire() as conn:
                 query = """
                     SELECT role, content, created_at 
-                    FROM messages 
+                    FROM fraud_messages 
                     WHERE conversation_id = $1 
                     AND role IN ('user', 'assistant')
                     ORDER BY created_at ASC
@@ -284,13 +286,12 @@ async def health_check():
 
 async def check_conversation_duration(conversation, caller_user_id, target_user, max_duration):
     """檢查對話持續時間是否超過限制"""
-    target_name = target_user.get("name", target_user.get("username", "Unknown"))
+    target_name = target_user.get("name", target_user.get("username", ""))
     target_id = target_user.get("uuid", "")
 
     if conversation:
-        duration = (datetime.now(timezone.utc) - conversation["created_at"]).total_seconds()
-        conversation["duration"] = duration
-        
+        duration = (datetime.now(timezone.utc) - conversation["created_at"].replace(tzinfo=timezone.utc)).total_seconds()
+        print(f"[INFO] Conversation duration for {conversation.get("conversation_id", "") if conversation else ""}: {duration} seconds")
         # Check if the conversation already passed 2 minutes and 45 seconds
         if duration > max_duration:
             print(f"[INFO] Conversation duration {duration} seconds exceeded limit of {max_duration} seconds for {target_name} ({target_id})")
@@ -335,21 +336,23 @@ async def fraud_chat_message(
     target_name = target_user.get("name", target_user.get("username", "Unknown"))
     target_id = target_user.get("uuid", "")
 
-    conversation = await get_user_latest_conversation(target_id)
-    in_time_limit = await check_conversation_duration(conversation, x_user_id, target_user, max_duration=165)
-    if not in_time_limit:
-        call_token = await database.set_call_token(x_user_id, target_id)
-        await notify_callee_event(
-            caller_user_id=x_user_id,
-            caller_name=x_username,
-            callee_user_id=target_id,
-            call_token=call_token,
-            conversation_id=conversation.get("conversation_id", "") if conversation else ""
-        )
-        return {
-            "status": "initiate_socketio",
-            "call_token": call_token
-        }
+    conversation = await get_user_latest_conversation(x_user_id, target_id) if not message.initiate_conversation else None
+    # in_time_limit = await check_conversation_duration(conversation, x_user_id, target_user, max_duration=165)
+    # # def check_is_fraud_whole():
+    # #     conversation_detection_results.get()
+    # if not in_time_limit:
+    #     call_token = await database.set_call_token(x_user_id, target_id, expiration_seconds=300)
+    #     await notify_callee_event(
+    #         caller_user_id=x_user_id,
+    #         caller_name=x_username,
+    #         callee_user_id=target_id,
+    #         call_token=call_token,
+    #         conversation_id=conversation.get("conversation_id", "") if conversation else ""
+    #     )
+    #     return {
+    #         "status": "initiate_socketio",
+    #         "call_token": call_token
+    #     }
 
     print(f"[INFO] AI will role-play as: {target_name} ({message.phone_number})")
 
@@ -357,6 +360,7 @@ async def fraud_chat_message(
     response_data = await handle_fraud_chat_message(
         user_id=x_user_id,
         prompt=message.prompt,
+        target_user_uuid=target_id,
         target_name=target_name,
         target_phone=message.phone_number,
         llm_pipeline=llm,
@@ -397,7 +401,7 @@ async def fraud_chat_message(
             # False比較多，表示不太可能是詐騙，需要真人接電話
             if false_count > true_count:
                 print(f"[INFO] Fraud detection indicates normal conversation. Notifying real user to take over.")
-                call_token = await database.set_call_token(x_user_id, target_id)
+                call_token = await database.set_call_token(x_user_id, target_id, expiration_seconds=300)
                 await notify_callee_event(
                     caller_user_id=x_user_id,
                     caller_name=x_username,
@@ -421,7 +425,7 @@ async def fraud_chat_message(
         else:
             # 如果沒有檢測結果，預設觸發通知（安全起見）
             print(f"[WARNING] No detection results available. Notifying real user as precaution.")
-            call_token = await database.set_call_token(x_user_id, target_id)
+            call_token = await database.set_call_token(x_user_id, target_id, expiration_seconds=300)
             await notify_callee_event(
                 caller_user_id=x_user_id,
                 caller_name=x_username,
@@ -446,7 +450,7 @@ async def fraud_chat_message(
             content=audio_bytes,
             media_type="audio/mpeg",
             headers={
-                "X-Response-Text": assistant_response,
+                "X-Response-Text": urllib.parse.quote(assistant_response),
                 "X-Message-Id": assistant_message_id,
                 "X-Conversation-Id": conversation_id,
                 "X-Recipient-User-Id": x_user_id,
@@ -469,6 +473,9 @@ async def fraud_chat_message(
         print(f"[ERROR] TTS generation failed: {e}")
         # Fallback to JSON response if TTS fails
         return {
+            "status": "error",
+            "error_type": "tts_generation_error",
+            "error_message": f"TTS generation failed: {e}",
             "message": assistant_response,
             "message_id": assistant_message_id,
             "conversation_id": conversation_id,
@@ -477,7 +484,6 @@ async def fraud_chat_message(
             "service_type": "anti-fraud",
             "target_name": target_name,
             "target_phone": message.phone_number,
-            "error": "TTS generation failed"
         }
 
 

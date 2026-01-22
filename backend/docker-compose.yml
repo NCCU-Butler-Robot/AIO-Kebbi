@@ -143,6 +143,9 @@ services:
     build:
       context: ./www
       dockerfile: Dockerfile
+      args:
+        - NONROOT_USERNAME=ubuntu
+        - PROJECT_PATH=/project/www
     restart: on-failure
     # ports:
     #   - "8000"

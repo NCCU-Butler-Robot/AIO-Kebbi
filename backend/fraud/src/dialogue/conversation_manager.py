@@ -16,6 +16,7 @@ from ..llm_pipeline import SYSTEM_PROMPT, LLMPipeline
 async def handle_fraud_chat_message(
     user_id: str,
     prompt: str,
+    target_user_uuid: str,
     target_name: str,
     target_phone: str,
     llm_pipeline: LLMPipeline,
@@ -44,7 +45,7 @@ async def handle_fraud_chat_message(
         messages_history = conversation["messages"]
 
     else:
-        conversation_id = await db_create_conversation(user_id)
+        conversation_id = await db_create_conversation(user_id, target_user_uuid)
         # 不使用固定的 system prompt，而是在generate_with_role中動態創建
         messages_history = []
 

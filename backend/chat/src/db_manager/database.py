@@ -51,7 +51,7 @@ async def get_user_latest_conversation(user_uuid: str) -> Optional[Dict]:
     async with pool.acquire() as conn:
         conversation_record = await conn.fetchrow(
             """
-            SELECT id, title FROM conversations
+            SELECT id, title FROM llm_conversations
             WHERE user_uuid = $1
             ORDER BY updated_at DESC
             LIMIT 1;
@@ -64,7 +64,7 @@ async def get_user_latest_conversation(user_uuid: str) -> Optional[Dict]:
 
         messages_records = await conn.fetch(
             """
-            SELECT id, role, content FROM messages
+            SELECT id, role, content FROM llm_messages
             WHERE conversation_id = $1
             ORDER BY created_at ASC;
             """,
@@ -89,7 +89,7 @@ async def create_conversation(user_uuid: str) -> str: # Removed system_prompt pa
         conversation_id = uuid.uuid4()
         await conn.execute(
             """
-            INSERT INTO conversations (id, user_uuid)
+            INSERT INTO llm_conversations (id, user_uuid)
             VALUES ($1, $2);
             """,
             conversation_id, uuid.UUID(user_uuid)
@@ -105,7 +105,7 @@ async def add_message(conversation_id: str, role: str, content: str) -> str:
         message_id = uuid.uuid4()
         await conn.execute(
             """
-            INSERT INTO messages (id, conversation_id, role, content)
+            INSERT INTO llm_messages (id, conversation_id, role, content)
             VALUES ($1, $2, $3, $4);
             """,
             message_id, uuid.UUID(conversation_id), role, content,
@@ -113,7 +113,7 @@ async def add_message(conversation_id: str, role: str, content: str) -> str:
         # Update conversation's updated_at timestamp
         await conn.execute(
             """
-            UPDATE conversations
+            UPDATE llm_conversations
             SET updated_at = NOW()
             WHERE id = $1;
             """,

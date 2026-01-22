@@ -19,6 +19,7 @@ let currentAudio = null;
 let callStartTime = null;
 let callTimerInterval = null;
 let totalCallDuration = 0;
+let call_api_counter = 0;
 
 // Initialize Speech Recognition
 function initSpeechRecognition() {
@@ -58,21 +59,21 @@ function initSpeechRecognition() {
             }
         };
         
-        recognition.onerror = function(event) {
-            console.error('Speech recognition error:', event.error);
+        // recognition.onerror = function(event) {
+        //     console.error('Speech recognition error:', event.error);
             
-            // If error occurs, the 'onend' event will still fire next.
-            // We don't need to call .start() here anymore; let onend handle the restart.
-            if (event.error === 'no-speech') {
-                updateStatus('Listening...', 'success');
-            } else if (event.error === 'network' || event.error === 'audio-capture') {
-                // For more critical errors, update status and potentially end the call
-                updateStatus('Error: ' + event.error + '. Please check microphone/network.', 'danger');
-                endCall(); 
-            } else {
-                updateStatus('Error: ' + event.error, 'warning');
-            }
-        };
+        //     // If error occurs, the 'onend' event will still fire next.
+        //     // We don't need to call .start() here anymore; let onend handle the restart.
+        //     if (event.error === 'no-speech') {
+        //         updateStatus('Listening...', 'success');
+        //     } else if (event.error === 'network' || event.error === 'audio-capture') {
+        //         // For more critical errors, update status and potentially end the call
+        //         updateStatus('Error: ' + event.error + '. Please check microphone/network.', 'danger');
+        //         endCall(); 
+        //     } else {
+        //         updateStatus('Error: ' + event.error, 'warning');
+        //     }
+        // };
         
         recognition.onend = function() {
             isRecognitionRunning = false; // Reset flag
@@ -159,6 +160,7 @@ async function startCall() {
     }
     
     isCallActive = true;
+    call_api_counter = 0;
     
     // Initialize audio monitoring and speech recognition
     const audioReady = await initAudioMonitoring();
@@ -258,39 +260,64 @@ async function sendMessage(text) {
     updateStatus('Processing...', 'primary');
     
     try {
+        const bodyPayload = {
+            phone_number: phone,
+            prompt: text
+        };
+
+        if (call_api_counter === 0) {
+            bodyPayload.initiate_conversation = true;
+        }
         const response = await authenticatedFetch('/api/fraud/', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-Installation-Id': 'web-interface'
             },
-            body: JSON.stringify({
-                phone_number: phone,
-                prompt: text
-            })
+            body: JSON.stringify(bodyPayload)
         });
         
         if (response.ok) {
-            // Get response text from headers
-            const responseText = response.headers.get('X-Response-Text');
-            const messageId = response.headers.get('X-Message-Id');
-            const conversationId = response.headers.get('X-Conversation-Id');
-            
-            // Get audio blob
-            const audioBlob = await response.blob();
-            
-            // Add assistant message to transcript with audio
-            addMessageToTranscript('assistant', responseText, audioBlob);
-            
-            // Auto-play audio if call is active
-            if (isCallActive) {
-                playAudio(audioBlob);
+            call_api_counter += 1;
+
+            const contentType = response.headers.get('content-type') || '';
+
+            if (contentType.includes('application/json')) {
+                const data = await response.json();
+                console.log('JSON Response:', data);
+                const status = data.status || '';
+                if (data.status === 'error' && data.error_type === 'tts_generation_error') {
+                    console.error(
+                        'TTS generation failed on server side:',
+                        data.error_message || ''
+                    );
+                    addMessageToTranscript('assistant', data.message || '');
+                }
             }
-            
-            updateStatus('Call Active - Listening...', 'success');
-            
-            console.log('Message ID:', messageId);
-            console.log('Conversation ID:', conversationId);
+            else {
+                console.log('Response Content-Type:', contentType);
+                // Get response text from headers
+                const encodedResponseText = response.headers.get('X-Response-Text');
+                const responseText = decodeURIComponent(encodedResponseText);
+                const messageId = response.headers.get('X-Message-Id');
+                const conversationId = response.headers.get('X-Conversation-Id');
+                
+                // Get audio blob
+                const audioBlob = await response.blob();
+                
+                // Add assistant message to transcript with audio
+                addMessageToTranscript('assistant', responseText, audioBlob);
+                
+                // Auto-play audio if call is active
+                if (isCallActive) {
+                    playAudio(audioBlob);
+                }
+                
+                updateStatus('Call Active - Listening...', 'success');
+                
+                console.log('Message ID:', messageId);
+                console.log('Conversation ID:', conversationId);
+            }
         } else {
             const errorData = await response.json();
             throw new Error(errorData.detail || 'Failed to send message');
