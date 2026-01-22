@@ -387,7 +387,7 @@ async def fraud_chat_message(
             print(f"[INFO] Conversation {conversation_id} detection results so far: {conversation_detection_results[conversation_id]}")
 
     # 檢查對話是否超過2.5分鐘（150秒）
-    in_time_limit = await check_conversation_duration(conversation, x_user_id, target_user, max_duration=150)
+    in_time_limit = await check_conversation_duration(conversation, x_user_id, target_user, max_duration=0)
     if not in_time_limit:
         # 超過2.5分鐘，根據檢測結果決定是否繼續
         results = conversation_detection_results.get(conversation_id, [])

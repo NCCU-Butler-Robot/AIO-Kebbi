@@ -120,7 +120,7 @@ def get_password_hash(password):
 
 
 def create_access_token(user_uuid: uuid.UUID, username: str):
-    to_encode = {"sub": str(user_uuid), "user_name": username}
+    to_encode = {"user_id": str(user_uuid), "user_name": username}
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=ALGORITHM)
@@ -129,7 +129,7 @@ def create_access_token(user_uuid: uuid.UUID, username: str):
 
 async def create_refresh_token(conn: asyncpg.Connection, user_uuid: uuid.UUID) -> str:
     token_payload = {
-        "sub": str(user_uuid),
+        "user_id": str(user_uuid),
         "jti": str(uuid.uuid4()),  # Unique token ID
     }
     encoded_jwt = jwt.encode(token_payload, JWT_REFRESH_SECRET_KEY, algorithm=ALGORITHM)
@@ -200,7 +200,7 @@ async def get_current_user(
     )
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
-        user_uuid_str: str | None = payload.get("sub")
+        user_uuid_str: str | None = payload.get("user_id")
         if user_uuid_str is None:
             raise credentials_exception
         user_uuid = uuid.UUID(user_uuid_str)
@@ -268,7 +268,7 @@ async def refresh_access_token(
         payload = jwt.decode(
             refresh_token, JWT_REFRESH_SECRET_KEY, algorithms=[ALGORITHM]
         )
-        user_uuid: str | None = payload.get("sub")
+        user_uuid: str | None = payload.get("user_id")
         if user_uuid is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -349,7 +349,7 @@ async def validate_token_for_nginx(
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
 
         username: str | None = payload.get("user_name")
-        user_id: str | None = payload.get("sub")
+        user_id: str | None = payload.get("user_id")
 
         if not username or not user_id:
             raise JWTError("Missing fields")

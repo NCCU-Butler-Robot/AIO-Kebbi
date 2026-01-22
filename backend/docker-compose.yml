@@ -101,6 +101,9 @@ services:
       args:
         - NONROOT_USERNAME=ubuntu
         - PROJECT_PATH=/project/chat
+    environment:
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
     # Remember nginx.conf expects this on port 5000, so ensure your Dockerfile exposes it.
     # ports:
     #   - "5000"
@@ -166,7 +169,7 @@ services:
       - auth
       - chat
       - fraud
-      - redis
+      - socket_gateway
       - www
 volumes:
   pg_data:

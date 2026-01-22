@@ -2,9 +2,12 @@
 
 // Check authentication on page load
 requireAuth();
+let socket = null;
 
 // Speech Recognition setup
-let recognition = null;let isRecognitionRunning = false; // New flag
+let recognition = null;
+let isRecognitionRunning = false;
+let shouldRestartRecognition = true;
 let isRecording = false;
 let isCallActive = false;
 let silenceTimer = null;
@@ -59,21 +62,21 @@ function initSpeechRecognition() {
             }
         };
         
-        // recognition.onerror = function(event) {
-        //     console.error('Speech recognition error:', event.error);
+        recognition.onerror = function(event) {
+            console.error('Speech recognition error:', event.error);
             
-        //     // If error occurs, the 'onend' event will still fire next.
-        //     // We don't need to call .start() here anymore; let onend handle the restart.
-        //     if (event.error === 'no-speech') {
-        //         updateStatus('Listening...', 'success');
-        //     } else if (event.error === 'network' || event.error === 'audio-capture') {
-        //         // For more critical errors, update status and potentially end the call
-        //         updateStatus('Error: ' + event.error + '. Please check microphone/network.', 'danger');
-        //         endCall(); 
-        //     } else {
-        //         updateStatus('Error: ' + event.error, 'warning');
-        //     }
-        // };
+            // If error occurs, the 'onend' event will still fire next.
+            // We don't need to call .start() here anymore; let onend handle the restart.
+            if (event.error === 'no-speech') {
+                updateStatus('Listening...', 'success');
+            } else if (event.error === 'network' || event.error === 'audio-capture') {
+                // For more critical errors, update status and potentially end the call
+                updateStatus('Error: ' + event.error + '. Please check microphone/network.', 'danger');
+                endCall(); 
+            } else {
+                updateStatus('Error: ' + event.error, 'warning');
+            }
+        };
         
         recognition.onend = function() {
             isRecognitionRunning = false; // Reset flag
@@ -83,7 +86,7 @@ function initSpeechRecognition() {
             if (isCallActive) {
                 setTimeout(() => {
                     // Re-check both flags before starting
-                    if (isCallActive && !isRecognitionRunning) {
+                    if (isCallActive && !isRecognitionRunning && shouldRestartRecognition) {
                         try {
                             recognition.start();
                         } catch (e) {
@@ -160,6 +163,7 @@ async function startCall() {
     }
     
     isCallActive = true;
+    shouldRestartRecognition = true;
     call_api_counter = 0;
     
     // Initialize audio monitoring and speech recognition
@@ -285,13 +289,27 @@ async function sendMessage(text) {
             if (contentType.includes('application/json')) {
                 const data = await response.json();
                 console.log('JSON Response:', data);
-                const status = data.status || '';
                 if (data.status === 'error' && data.error_type === 'tts_generation_error') {
                     console.error(
                         'TTS generation failed on server side:',
                         data.error_message || ''
                     );
                     addMessageToTranscript('assistant', data.message || '');
+                }
+                else if (data.status === 'initiate_socketio') {
+                    shouldRestartRecognition = false;
+                    isRecognitionRunning = false;
+                    recognition.stop();
+                    addMessageToTranscript('system', `Direct calling authorized: ${data.reason || ''}`);
+                    call_token = data.call_token;
+                    console.log('Call token for Socket.IO:', call_token);
+                    socket = io({
+                        transports: ['websocket', 'webtransport'],
+                        auth: {
+                            access_token: getAccessToken(),
+                            call_token: call_token
+                        },
+                    });
                 }
             }
             else {

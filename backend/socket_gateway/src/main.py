@@ -1,11 +1,21 @@
 import json
 import asyncio
+import os
 import socketio
 import redis.asyncio as redis
-import uuid
+from jose import JWTError, jwt
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from .db_manager import database
+
+# JWT Settings
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+
+if not JWT_SECRET_KEY:
+    raise ValueError(
+        "JWT_SECRET_KEY must be set in the environment"
+    )
 
 # 1. Set up Redis manager for scaling across multiple instances
 # 'redis://' assumes redis is running locally on default port 6379
@@ -130,66 +140,72 @@ app.mount("/", socketio.ASGIApp(sio))
 @sio.event
 async def connect(sid, environ, auth):
     # 1. Access the ASGI scope
-    scope = environ.get("asgi.scope")
+    # scope = environ.get("asgi.scope")
 
-    if scope:
-        # 2. Extract headers (they are a list of [b'name', b'value'] tuples)
-        headers = dict(scope.get("headers", []))
+    # if scope:
+    #     # 2. Extract headers (they are a list of [b'name', b'value'] tuples)
+    #     headers = dict(scope.get("headers", []))
 
-        # 3. Get specific headers (must use byte keys)
-        user_id = headers.get(b"x-user-id", b"").decode()
-        username = headers.get(b"x-username", b"").decode()
-        installation_id = headers.get(b"x-installation-id", b"").decode()
+    #     # 3. Get specific headers (must use byte keys)
+    #     user_id = headers.get(b"x-user-id", b"").decode()
+    #     username = headers.get(b"x-username", b"").decode()
+    #     installation_id = headers.get(b"x-installation-id", b"").decode()
 
-        if user_id and username and installation_id:
-            
+    #     if user_id and username:
+    #         # Join a room named after the user_id for easy broadcasting
+    #         print(f"Connected: {sid} - User: {username} (ID: {user_id}) on device {installation_id}")
 
-            # Join a room named after the user_id for easy broadcasting
-            print(f"Connected: {sid} - User: {username} (ID: {user_id}) on device {installation_id}")
 
-            call_token = auth.get("call_token")
+    access_token = auth.get("access_token")
+    call_token = auth.get("call_token")
+    payload = jwt.decode(access_token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
 
-            key = f"call_token:{call_token}"
+    # username: str | None = payload.get("user_name")
+    user_id: str | None = payload.get("user_id")
 
-            if not database.redis_client:
-                print("Redis client not initialized")
-                return False
+    if user_id and call_token:
 
-            await database.redis_client.expire(key, 300)
+        key = f"call_token:{call_token}"
 
-            value = await database.redis_client.get(key)
-
-            if not value:
-                print("Invalid or expired call_token")
-                return False
-            
-            data = json.loads(value)
-
-            caller_id = data["caller"]
-            callee_id = data["callee"]
-
-            room = f"call:{caller_id}_{callee_id}__{call_token}"
-            # Store user info in the session for this connection
-            await sio.save_session(
-                sid,
-                {
-                    "role": "caller" if caller_id == user_id else "callee" if callee_id == user_id else "unknown",
-                    "caller_id": caller_id,
-                    "callee_id": callee_id,
-                    "call_token": call_token,
-                    "room": room,
-                },
-            )
-
-            await sio.enter_room(sid, room)
-
-            return True
-        else:
-            print(f"Connection rejected: {sid} - Missing user/installation headers")
+        if not database.redis_client:
+            print("Redis client not initialized")
             return False
+
+        await database.redis_client.expire(key, 300)
+
+        value = await database.redis_client.get(key)
+
+        if not value:
+            print("Invalid or expired call_token")
+            return False
+        
+        data = json.loads(value)
+
+        caller_id = data["caller"]
+        callee_id = data["callee"]
+
+        room = f"call:{caller_id}_{callee_id}__{call_token}"
+        # Store user info in the session for this connection
+        await sio.save_session(
+            sid,
+            {
+                "role": "caller" if caller_id == user_id else "callee" if callee_id == user_id else "unknown",
+                "caller_id": caller_id,
+                "callee_id": callee_id,
+                "call_token": call_token,
+                "room": room,
+            },
+        )
+
+        await sio.enter_room(sid, room)
+
+        return True
     else:
-        print(f"Connection rejected: {sid} - No ASGI scope")
+        print(f"Connection rejected: {sid} - Missing user/installation headers")
         return False
+    # else:
+    #     print(f"Connection rejected: {sid} - No ASGI scope")
+    #     return False
 
 @sio.event
 async def disconnect(sid):
