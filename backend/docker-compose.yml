@@ -53,6 +53,7 @@ services:
       secrets:
         - HF_TOKEN
         - GIT_AUTH_TOKEN
+    restart: on-failure
     # ports:
     #   - "8000"
     environment:
@@ -67,6 +68,12 @@ services:
       VOICE_MODEL: ${VOICE_MODEL:-alloy}
       # Food Recognition Service Configuration  
       FOOD_API_URL: ${FOOD_API_URL:-https://food.bestweiwei.dpdns.org}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
     depends_on:
       db:
         condition: service_healthy
@@ -77,6 +84,7 @@ services:
       args:
         - NONROOT_USERNAME=ubuntu
         - PROJECT_PATH=/project/fraud
+    restart: on-failure
     # ports:
     #   - "8000"
     environment:
@@ -94,6 +102,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      push_notification:
+        condition: service_started
+      redis:
+        condition: service_started
   socket_gateway:
     build:
       context: ./socket_gateway
@@ -101,9 +113,12 @@ services:
       args:
         - NONROOT_USERNAME=ubuntu
         - PROJECT_PATH=/project/chat
+    restart: on-failure
     environment:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: ${JWT_ALGORITHM}
+    depends_on:
+      - redis
     # Remember nginx.conf expects this on port 5000, so ensure your Dockerfile exposes it.
     # ports:
     #   - "5000"
@@ -130,6 +145,7 @@ services:
         - PROJECT_PATH=/project/push_notification
     # ports:
     #   - "8000"
+    restart: on-failure
     environment:
       DB_HOST: ${DB_HOST}
       DB_PORT: ${DB_PORT}
@@ -152,8 +168,6 @@ services:
     restart: on-failure
     # ports:
     #   - "8000"
-    depends_on:
-      - auth
   redis:
     image: redis:8-alpine
     restart: on-failure
@@ -161,6 +175,7 @@ services:
     #   - "6379"
   nginx:
     image: nginx:stable-alpine
+    restart: on-failure
     ports:
       - "8100:80"
     volumes:
@@ -171,6 +186,7 @@ services:
       - fraud
       - socket_gateway
       - www
+
 volumes:
   pg_data:
 

@@ -92,6 +92,7 @@ async def process_push_stream():
             for stream_name, events in response:
                 for event_id, fields in events:
                     last_id = event_id  # update last_id to avoid reprocessing
+                    await database.redis_client.xdel(STREAM_KEY, event_id)
 
                     # Decode Redis fields (they might be bytes)
                     event = dict(fields)

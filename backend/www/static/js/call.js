@@ -224,18 +224,30 @@ function handleJsonResponse(data) {
             try {
                 mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const micSource = audioContext.createMediaStreamSource(mediaStream);
-                audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-                micSource.connect(audioProcessor);
-                audioProcessor.connect(audioContext.destination);
 
-                audioProcessor.onaudioprocess = (e) => {
+                // Load AudioWorklet processor
+                await audioContext.audioWorklet.addModule('/static/js/mic-processor.js');
+
+                const micSource = audioContext.createMediaStreamSource(mediaStream);
+
+                // Create AudioWorkletNode
+                const micProcessor = new AudioWorkletNode(audioContext, 'mic-processor');
+
+                // Listen to messages from the AudioWorklet
+                micProcessor.port.onmessage = (event) => {
                     if (!isCallActive || !socketConnected) return;
-                    const input = e.inputBuffer.getChannelData(0);
-                    const pcm16 = float32ToInt16(input);
-                    socket.emit('audio_chunk', { metadata: { timestamp: Date.now() }, chunk: pcm16.buffer }, pcm16.buffer);
+
+                    const float32Array = event.data;
+                    const pcm16 = float32ToInt16(float32Array);
+                    const metadata = { timestamp: Date.now() };
+                    socket.emit('audio_chunk', metadata, pcm16.buffer);
                 };
-                console.log('Real-time PCM streaming started');
+
+                // Connect the graph
+                micSource.connect(micProcessor);
+                micProcessor.connect(audioContext.destination);
+
+                console.log('Real-time PCM streaming started using AudioWorklet');
 
                 initPlayback(); // for incoming audio
 

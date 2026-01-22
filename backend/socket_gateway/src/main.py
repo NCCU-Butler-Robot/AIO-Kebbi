@@ -1,11 +1,14 @@
-import json
 import asyncio
+import json
 import os
-import socketio
-import redis.asyncio as redis
-from jose import JWTError, jwt
+import time
 from contextlib import asynccontextmanager
+
+import redis.asyncio as redis
+import socketio
 from fastapi import FastAPI
+from jose import JWTError, jwt
+
 from .db_manager import database
 
 # JWT Settings
@@ -160,7 +163,7 @@ async def connect(sid, environ, auth):
     call_token = auth.get("call_token")
     payload = jwt.decode(access_token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
 
-    # username: str | None = payload.get("user_name")
+    username: str | None = payload.get("user_name")
     user_id: str | None = payload.get("user_id")
 
     if user_id and call_token:
@@ -189,6 +192,8 @@ async def connect(sid, environ, auth):
         await sio.save_session(
             sid,
             {
+                "username": username,
+                "user_id": user_id,
                 "role": "caller" if caller_id == user_id else "callee" if callee_id == user_id else "unknown",
                 "caller_id": caller_id,
                 "callee_id": callee_id,
@@ -251,6 +256,7 @@ async def handle_audio_chunk(sid, metadata, chunk):
     chunk: raw PCM bytes
     metadata: dict, e.g. {"sequence": 1, "timestamp": 123456}
     """
+    received_timestamp = time.time()
     async with sio.session(sid) as session:
         if not session:
             return
@@ -264,6 +270,12 @@ async def handle_audio_chunk(sid, metadata, chunk):
         key = f"call_token:{call_token}"
 
         asyncio.create_task(refresh_key(key))
+
+        # username = session.get("username")
+        # user_id = session.get("user_id")
+        # role = session.get("role")
+        # original_timestamp = metadata.get("timestamp")/1000.0
+        # print(f"Received audio chunk from {username}, delay {received_timestamp - original_timestamp} s")
 
         # Broadcast to everyone else in the room
         await sio.emit(
