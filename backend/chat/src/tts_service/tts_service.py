@@ -24,6 +24,9 @@ class TTSService:
         Returns:
             清理後的文字
         """
+        if not isinstance(text, str):
+            return ""
+            
         # 替換常見的 Unicode 字符
         replacements = {
             '\u2019': "'",  # 右單引號
@@ -39,14 +42,10 @@ class TTSService:
         for unicode_char, ascii_char in replacements.items():
             text = text.replace(unicode_char, ascii_char)
         
-        # 移除或替換其他非 ASCII 字符（保留中文等常用字符）
-        try:
-            # 嘗試編碼為 UTF-8 來確保兼容性
-            text.encode('utf-8')
-            return text
-        except UnicodeEncodeError:
-            # 如果有問題，使用更安全的處理方式
-            return text.encode('utf-8', 'ignore').decode('utf-8')
+        # 為了安全起見，進行UTF-8編碼再解碼。
+        # 這有助於清理任何編碼奇特的字符。
+        # 'ignore'標誌將丟棄無法處理的字符。
+        return text.encode('utf-8', 'ignore').decode('utf-8')
     
     async def generate_speech_bytes(self, text: str) -> bytes:
         """

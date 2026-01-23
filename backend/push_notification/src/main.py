@@ -165,7 +165,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
-@app.post("/api/push/subscribe")
+@app.post("/api/push/subscribe/")
 async def subscribe(
     subscription: SubscribeRequest,
     x_user_id: str | None = Header(None, alias="X-User-Id"),
@@ -181,15 +181,15 @@ async def subscribe(
         platform = subscription.platform
         if subscription.pushSubscription:
             push_sub = subscription.pushSubscription.model_dump()
-            await database.save_subscription(user_id, push_sub, platform)
+            await database.save_subscription(user_id, push_sub, platform="web")
         elif subscription.fcm_token:
             # For FCM, create a dict with endpoint as token, no keys
             push_sub = {"endpoint": subscription.fcm_token}
-            await database.save_subscription(user_id, push_sub, "fcm")
+            await database.save_subscription(user_id, push_sub, platform="fcm")
         elif subscription.apns_token:
             # For APNs, create a dict with endpoint as token, no keys
             push_sub = {"endpoint": subscription.apns_token}
-            await database.save_subscription(user_id, push_sub, "apns")
+            await database.save_subscription(user_id, push_sub, platform="apns")
         else:
             raise HTTPException(
                 status_code=400,

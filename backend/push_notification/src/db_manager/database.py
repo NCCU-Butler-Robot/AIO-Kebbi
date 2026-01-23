@@ -60,7 +60,8 @@ async def save_subscription(user_id: str, push_sub: dict, platform: str) -> str:
                 expiration_time = EXCLUDED.expiration_time,
                 p256dh = EXCLUDED.p256dh,
                 auth = EXCLUDED.auth,
-                platform = EXCLUDED.platform
+                platform = EXCLUDED.platform,
+                updated_at = NOW();
         """,
             push_sub.get("endpoint"),
             user_id,

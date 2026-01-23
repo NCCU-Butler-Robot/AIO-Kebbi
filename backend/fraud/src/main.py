@@ -3,11 +3,10 @@ import json
 from contextlib import asynccontextmanager
 from typing import Optional
 from datetime import datetime, timezone
-import uuid
 import urllib.parse
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -309,7 +308,8 @@ async def fraud_chat_message(
     message: FraudMessage,
     x_user_id: str | None = Header(None, alias="X-User-Id"),
     x_username: str | None = Header(None, alias="X-Username"),
-    x_installation_id: str | None = Header(None, alias="X-Installation-Id"),
+    x_installation_id: str | None = Header("", alias="X-Installation-Id"),
+    text_only: str = Query(None),
 ):
     """
     反詐騙對話API
@@ -319,11 +319,16 @@ async def fraud_chat_message(
         f"[DEBUG] Anti-fraud service received message from {x_username} ({x_user_id}) targeting phone {message.phone_number}: {message.prompt}"
     )
 
-    if not all([x_user_id, x_installation_id]):
+    if not x_user_id:
         raise HTTPException(
             status_code=400,
-            detail="X-User-Id and X-Installation-Id headers are required.",
+            detail="X-User-Id header is required.",
         )
+    # if not x_installation_id:
+    #     raise HTTPException(
+    #         status_code=400,
+    #         detail="X-Installation-Id header is required.",
+    #     )
 
     # 透過手機號碼查詢目標用戶
     target_user = await get_user_by_phone(message.phone_number)
@@ -440,6 +445,17 @@ async def fraud_chat_message(
                 "reason": "no_detection_results"
             }
 
+    if text_only == "true":
+        return {
+            "message": assistant_response,
+            "message_id": assistant_message_id,
+            "conversation_id": conversation_id,
+            "recipient_user_id": x_user_id,
+            "source_installation_id": x_installation_id,
+            "service_type": "anti-fraud",
+            "target_name": target_name,
+            "target_phone": message.phone_number,
+        }
 
     # Generate audio from text using TTS service
     try:
