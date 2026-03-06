@@ -1,0 +1,18 @@
+[project]
+name = "aio-kebbi-www"
+version = "1.0.0"
+description = "AIO-Kebbi Web Interface Service"
+authors = [
+    {name = "AIO-Kebbi Team"}
+]
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "jinja2>=3.1.3",
+    "python-multipart>=0.0.6",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

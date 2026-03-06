@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS conversations (
+CREATE TABLE IF NOT EXISTS llm_conversations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_uuid UUID REFERENCES users(uuid) ON DELETE CASCADE,
     title TEXT,  -- optional, can auto-generate from first message
@@ -6,12 +6,12 @@ CREATE TABLE IF NOT EXISTS conversations (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS messages (
+CREATE TABLE IF NOT EXISTS llm_messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
+    conversation_id UUID REFERENCES llm_conversations(id) ON DELETE CASCADE,
     role TEXT NOT NULL CHECK(role IN ('system','user','assistant')), 
     content TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT NOW(),
-    parent_message_id UUID REFERENCES messages(id) ON DELETE SET NULL, -- optional for regeneration
+    parent_message_id UUID REFERENCES llm_messages(id) ON DELETE SET NULL, -- optional for regeneration
     version INT DEFAULT 1
 );

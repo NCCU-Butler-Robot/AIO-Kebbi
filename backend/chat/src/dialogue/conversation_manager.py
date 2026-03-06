@@ -3,16 +3,14 @@ from typing import List, Dict
 
 from ..llm_pipeline import LLMPipeline, SYSTEM_PROMPT
 from ..db_manager.database import (
-    get_user_latest_conversation,
     create_conversation as db_create_conversation, # Alias to avoid name conflict
     add_message as db_add_message, # Alias to avoid name conflict
 )
 
 
 async def handle_chat_message(
-    user_id: str, prompt: str, llm_pipeline: LLMPipeline, generate_lock: asyncio.Lock
+    user_id: str, prompt: str, llm_pipeline: LLMPipeline, generate_lock: asyncio.Lock, conversation: dict | None = None
 ) -> Dict[str, str]:
-    conversation = await get_user_latest_conversation(user_id)
     conversation_id: str
     messages_history: List[Dict[str, str]]
 

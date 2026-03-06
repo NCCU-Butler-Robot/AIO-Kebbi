@@ -51,11 +51,11 @@ BEFORE INSERT OR UPDATE ON users
 FOR EACH ROW
 EXECUTE FUNCTION trim_name_field();
 
--- Insert dummy users
-INSERT INTO users (uuid, name, username, email, phone_number, hashed_password, scam_detection)
-VALUES
-  ('11111111-1111-1111-1111-111111111111', 'Alice Cheng', 'alice', 'user1@example.com', '0911000001', '$2b$12$WDpsRtYLL8H9kFhMuGKPYefAJLuFX2a1g2zwSz1cFQKj1DZjank4K', TRUE), -- passAlice1
-  ('22222222-2222-2222-2222-222222222222', 'Bob Smith', 'bob', 'user2@example.com', '0911000002', '$2b$12$lIrcY2ZqtaA8236n/tWemeAufOZe9wuitYEF8Xa70UMqgUl/d/4S', TRUE), -- passBob1
+-- -- Insert dummy users
+-- INSERT INTO users (uuid, name, username, email, phone_number, hashed_password, scam_detection)
+-- VALUES
+--   ('11111111-1111-1111-1111-111111111111', 'Alice Cheng', 'alice', 'user1@example.com', '0911000001', '$2b$12$WDpsRtYLL8H9kFhMuGKPYefAJLuFX2a1g2zwSz1cFQKj1DZjank4K', TRUE), -- passAlice1
+--   ('22222222-2222-2222-2222-222222222222', 'Bob Smith', 'bob', 'user2@example.com', '0911000002', '$2b$12$lIrcY2ZqtaA8236n/tWemeAufOZe9wuitYEF8Xa70UMqgUl/d/4S', TRUE), -- passBob1
 
-  ('4ac10511-9f94-4bda-be08-cadc46018b8d', 'Test', 'test', 'test@example.com', '0911000003', '$2b$12$t74LBr5mlJfvptNrju4m1eNGfLMIMxl9rZlaRp/5LUXkUH/pIUo9S', FALSE) -- test
-ON CONFLICT (username) DO NOTHING;  -- prevent duplicate entries 
+--   ('4ac10511-9f94-4bda-be08-cadc46018b8d', 'Test', 'test', 'test@example.com', '0911000003', '$2b$12$t74LBr5mlJfvptNrju4m1eNGfLMIMxl9rZlaRp/5LUXkUH/pIUo9S', FALSE) -- test
+-- ON CONFLICT (username) DO NOTHING;  -- prevent duplicate entries 

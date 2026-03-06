@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}Login - AIO-Kebbi{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+        <div class="card shadow-lg border-0 mt-4">
+            <div class="card-body p-5">
+                <div class="text-center mb-4">
+                    <i class="bi bi-box-arrow-in-right text-primary" style="font-size: 3rem;"></i>
+                    <h2 class="mt-3">Login</h2>
+                    <p class="text-muted">Welcome back! Please login to your account.</p>
+                </div>
+                
+                <!-- Alert for messages -->
+                <div id="loginAlert" class="alert alert-dismissible fade" role="alert" style="display: none;">
+                    <span id="loginAlertMessage"></span>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                
+                <form id="loginForm">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">
+                            <i class="bi bi-person"></i> Username
+                        </label>
+                        <input type="text" class="form-control form-control-lg" id="username" 
+                               name="username" required placeholder="Enter your username">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="password" class="form-label">
+                            <i class="bi bi-lock"></i> Password
+                        </label>
+                        <input type="password" class="form-control form-control-lg" id="password" 
+                               name="password" required placeholder="Enter your password">
+                    </div>
+                    
+                    <div class="d-grid gap-2 mt-4">
+                        <button type="submit" class="btn btn-primary btn-lg" id="loginBtn">
+                            <i class="bi bi-box-arrow-in-right"></i> Login
+                        </button>
+                    </div>
+                </form>
+                
+                <hr class="my-4">
+                
+                <div class="text-center">
+                    <p class="text-muted mb-0">
+                        Don't have an account? 
+                        <a href="/register" class="text-decoration-none">Register here</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const loginBtn = document.getElementById('loginBtn');
+    const originalBtnText = loginBtn.innerHTML;
+    loginBtn.disabled = true;
+    loginBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Logging in...';
+    
+    const formData = new FormData();
+    formData.append('username', document.getElementById('username').value);
+    formData.append('password', document.getElementById('password').value);
+    
+    try {
+        const response = await fetch('/auth/login', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            // Store token
+            localStorage.setItem('accessToken', data.access_token);
+            
+            showAlert('Login successful! Redirecting...', 'success');
+            
+            // Redirect to call page after 1 second
+            setTimeout(() => {
+                window.location.href = '/call';
+            }, 1000);
+        } else {
+            showAlert(data.detail || 'Login failed. Please check your credentials.', 'danger');
+            loginBtn.disabled = false;
+            loginBtn.innerHTML = originalBtnText;
+        }
+    } catch (error) {
+        console.error('Login error:', error);
+        showAlert('Network error. Please try again.', 'danger');
+        loginBtn.disabled = false;
+        loginBtn.innerHTML = originalBtnText;
+    }
+});
+
+function showAlert(message, type) {
+    const alertDiv = document.getElementById('loginAlert');
+    const alertMessage = document.getElementById('loginAlertMessage');
+    
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertMessage.textContent = message;
+    alertDiv.style.display = 'block';
+}
+</script>
+{% endblock %}

@@ -53,6 +53,7 @@ services:
       secrets:
         - HF_TOKEN
         - GIT_AUTH_TOKEN
+    restart: on-failure
     # ports:
     #   - "8000"
     environment:
@@ -61,9 +62,50 @@ services:
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_DATABASE_NAME: ${DB_DATABASE_NAME}
+      # TTS Service Configuration
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      TTS_MODEL: ${TTS_MODEL:-tts-1}
+      VOICE_MODEL: ${VOICE_MODEL:-alloy}
+      # Food Recognition Service Configuration  
+      FOOD_API_URL: ${FOOD_API_URL:-https://food.bestweiwei.dpdns.org}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
     depends_on:
       db:
         condition: service_healthy
+  fraud:
+    build:
+      context: fraud
+      dockerfile: Dockerfile
+      args:
+        - NONROOT_USERNAME=ubuntu
+        - PROJECT_PATH=/project/fraud
+    restart: on-failure
+    # ports:
+    #   - "8000"
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_DATABASE_NAME: ${DB_DATABASE_NAME}
+      # Anti-Fraud Service Configuration
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      # TTS Service Configuration
+      TTS_MODEL: ${TTS_MODEL:-tts-1}
+      VOICE_MODEL: ${VOICE_MODEL:-alloy}
+    depends_on:
+      db:
+        condition: service_healthy
+      push_notification:
+        condition: service_started
+      redis:
+        condition: service_started
   socket_gateway:
     build:
       context: ./socket_gateway
@@ -71,6 +113,12 @@ services:
       args:
         - NONROOT_USERNAME=ubuntu
         - PROJECT_PATH=/project/chat
+    restart: on-failure
+    environment:
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+    depends_on:
+      - redis
     # Remember nginx.conf expects this on port 5000, so ensure your Dockerfile exposes it.
     # ports:
     #   - "5000"
@@ -80,14 +128,46 @@ services:
   #     context: ./food_detect
   #     dockerfile: Dockerfile
   #   # Add other configurations as needed
-  tts:
+  # tts:
+  #   build:
+  #     context: ./tts
+  #     dockerfile: Dockerfile
+  #     args:
+  #       - NONROOT_USERNAME=ubuntu
+  #       - PROJECT_PATH=/project/tts
+  #   # Add other configurations as needed
+  push_notification:
     build:
-      context: ./tts
+      context: ./push_notification
       dockerfile: Dockerfile
       args:
         - NONROOT_USERNAME=ubuntu
-        - PROJECT_PATH=/project/tts
-    # Add other configurations as needed
+        - PROJECT_PATH=/project/push_notification
+    # ports:
+    #   - "8000"
+    restart: on-failure
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_DATABASE_NAME: ${DB_DATABASE_NAME}
+      FIREBASE_CREDENTIALS_PATH: /run/secrets/FCM_CREDENTIALS
+    secrets:
+      - FCM_CREDENTIALS
+    depends_on:
+      db:
+        condition: service_healthy
+  www:
+    build:
+      context: ./www
+      dockerfile: Dockerfile
+      args:
+        - NONROOT_USERNAME=ubuntu
+        - PROJECT_PATH=/project/www
+    restart: on-failure
+    # ports:
+    #   - "8000"
   redis:
     image: redis:8-alpine
     restart: on-failure
@@ -95,16 +175,18 @@ services:
     #   - "6379"
   nginx:
     image: nginx:stable-alpine
+    restart: on-failure
     ports:
       - "8100:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - auth
-      - db
       - chat
+      - fraud
       - socket_gateway
-      - redis
+      - www
+
 volumes:
   pg_data:
 
@@ -113,3 +195,5 @@ secrets:
     environment: HF_TOKEN
   GIT_AUTH_TOKEN:
     environment: GIT_AUTH_TOKEN
+  FCM_CREDENTIALS:
+    file: ./secrets/aio-kebbi-firebase-adminsdk-fbsvc-0d7dde61d4.json

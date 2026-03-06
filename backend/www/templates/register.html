@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}Register - AIO-Kebbi{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+        <div class="card shadow-lg border-0 mt-4">
+            <div class="card-body p-5">
+                <div class="text-center mb-4">
+                    <i class="bi bi-person-plus text-primary" style="font-size: 3rem;"></i>
+                    <h2 class="mt-3">Register</h2>
+                    <p class="text-muted">Create a new account to get started.</p>
+                </div>
+                
+                <!-- Alert for messages -->
+                <div id="registerAlert" class="alert alert-dismissible fade" role="alert" style="display: none;">
+                    <span id="registerAlertMessage"></span>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                
+                <form id="registerForm">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">
+                            <i class="bi bi-person"></i> Username
+                        </label>
+                        <input type="text" class="form-control" id="username" 
+                               name="username" required placeholder="Choose a username">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="email" class="form-label">
+                            <i class="bi bi-envelope"></i> Email
+                        </label>
+                        <input type="email" class="form-control" id="email" 
+                               name="email" required placeholder="your.email@example.com">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="phone_number" class="form-label">
+                            <i class="bi bi-telephone"></i> Phone Number
+                        </label>
+                        <input type="tel" class="form-control" id="phone_number" 
+                               name="phone_number" required placeholder="0912345678">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="name" class="form-label">
+                            <i class="bi bi-card-text"></i> Full Name
+                        </label>
+                        <input type="text" class="form-control" id="name" 
+                               name="name" required placeholder="Your full name">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="password" class="form-label">
+                            <i class="bi bi-lock"></i> Password
+                        </label>
+                        <input type="password" class="form-control" id="password" 
+                               name="password" required placeholder="Choose a strong password"
+                               minlength="8">
+                        <div class="form-text">Password must be at least 8 characters long.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="confirmPassword" class="form-label">
+                            <i class="bi bi-lock-fill"></i> Confirm Password
+                        </label>
+                        <input type="password" class="form-control" id="confirmPassword" 
+                               name="confirmPassword" required placeholder="Re-enter your password">
+                    </div>
+                    
+                    <div class="d-grid gap-2 mt-4">
+                        <button type="submit" class="btn btn-primary btn-lg" id="registerBtn">
+                            <i class="bi bi-person-plus"></i> Register
+                        </button>
+                    </div>
+                </form>
+                
+                <hr class="my-4">
+                
+                <div class="text-center">
+                    <p class="text-muted mb-0">
+                        Already have an account? 
+                        <a href="/login" class="text-decoration-none">Login here</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('registerForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    // Check if passwords match
+    const password = document.getElementById('password').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    
+    if (password !== confirmPassword) {
+        showAlert('Passwords do not match!', 'danger');
+        return;
+    }
+    
+    const registerBtn = document.getElementById('registerBtn');
+    const originalBtnText = registerBtn.innerHTML;
+    registerBtn.disabled = true;
+    registerBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Registering...';
+    
+    const formData = {
+        username: document.getElementById('username').value,
+        email: document.getElementById('email').value,
+        phone_number: document.getElementById('phone_number').value,
+        name: document.getElementById('name').value,
+        password: password
+    };
+    
+    try {
+        const response = await fetch('/auth/register', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(formData)
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            showAlert('Registration successful! Redirecting to login...', 'success');
+            
+            // Redirect to login page after 2 seconds
+            setTimeout(() => {
+                window.location.href = '/login';
+            }, 2000);
+        } else {
+            showAlert(data.detail || 'Registration failed. Please try again.', 'danger');
+            registerBtn.disabled = false;
+            registerBtn.innerHTML = originalBtnText;
+        }
+    } catch (error) {
+        console.error('Registration error:', error);
+        showAlert('Network error. Please try again.', 'danger');
+        registerBtn.disabled = false;
+        registerBtn.innerHTML = originalBtnText;
+    }
+});
+
+function showAlert(message, type) {
+    const alertDiv = document.getElementById('registerAlert');
+    const alertMessage = document.getElementById('registerAlertMessage');
+    
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertMessage.textContent = message;
+    alertDiv.style.display = 'block';
+}
+</script>
+{% endblock %}
