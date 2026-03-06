@@ -94,6 +94,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       DB_DATABASE_NAME: ${DB_DATABASE_NAME}
       # Anti-Fraud Service Configuration
+      FRAUD_DETECTION_API_URL: ${FRAUD_DETECTION_API_URL}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       # TTS Service Configuration
