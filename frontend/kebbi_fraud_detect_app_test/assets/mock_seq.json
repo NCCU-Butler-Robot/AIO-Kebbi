@@ -1,0 +1,13 @@
+[
+    { "type": "detection_started" },
+    { "type": "incoming_call_request", "caller_id": "mock-caller", "target_username": "demo_user", "timeout": 20, "llm_only": false },
+    { "type": "call_accepted", "call_id": "call-001" },
+  
+    { "type": "fraud_assessment", "sentence": "Hello, this is your bank.", "fraud_stage": 1, "keywords_found": ["bank"] },
+    { "type": "fraud_assessment", "sentence": "Please provide your OTP.", "fraud_stage": 3, "keywords_found": ["otp"] },
+  
+    { "type": "scam_decision", "fraud_stage": 3, "fraud_count": 2 },
+    { "type": "detection_ended" },
+    { "type": "call_ended", "call_id": "call-001" }
+  ]
+  

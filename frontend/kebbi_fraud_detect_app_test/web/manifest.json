@@ -1,0 +1,16 @@
+{
+    "name": "Fraud Detect App",
+    "short_name": "FraudDetect",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#FFF8E2",
+    "theme_color": "#439293",
+    "description": "Fraud Detect",
+    "orientation": "portrait-primary",
+    "icons": [
+      { "src": "assets/image/logo.png", "sizes": "192x192", "type": "image/png" },
+      { "src": "assets/image/logo.png", "sizes": "512x512", "type": "image/png" },
+      { "src": "assets/image/logo.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" }
+    ]
+  }
+  

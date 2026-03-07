@@ -1,0 +1,10 @@
+{
+  "call_id": "demo-001",
+  "transcript": "Hello, this is simulated speech to text conversion.",
+  "fraud_assessment": {
+    "label": "Investment fraud",
+    "risk_score": 0.75,
+    "llm_suggestion": "It is recommended to pause the call and confirm the other party's identity first.",
+    "confidence": 0.80
+  }
+}

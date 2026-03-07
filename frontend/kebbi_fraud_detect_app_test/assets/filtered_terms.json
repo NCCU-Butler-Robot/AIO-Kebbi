@@ -1,0 +1,138 @@
+[
+  {
+    "term": "account",
+    "score": 63.51165622210309
+  },
+  {
+    "term": "security",
+    "score": 55.38463379147313
+  },
+  {
+    "term": "press",
+    "score": 50.532901835440256
+  },
+  {
+    "term": "order",
+    "score": 46.27763405962051
+  },
+  {
+    "term": "money",
+    "score": 42.65873364950936
+  },
+  {
+    "term": "information",
+    "score": 32.796052620992455
+  },
+  {
+    "term": "help",
+    "score": 32.48332838490228
+  },
+  {
+    "term": "support",
+    "score": 31.632376798833103
+  },
+  {
+    "term": "bank",
+    "score": 30.6792222109225
+  },
+  {
+    "term": "card",
+    "score": 29.515717155059335
+  },
+  {
+    "term": "message",
+    "score": 28.340029174894283
+  },
+  {
+    "term": "amazon",
+    "score": 25.207919673659116
+  },
+  {
+    "term": "problem",
+    "score": 24.382426588410322
+  },
+  {
+    "term": "company",
+    "score": 23.62850128762642
+  },
+  {
+    "term": "case",
+    "score": 22.211452373669754
+  },
+  {
+    "term": "service",
+    "score": 21.228116015951695
+  },
+  {
+    "term": "email",
+    "score": 20.55994206620405
+  },
+  {
+    "term": "officer",
+    "score": 20.38691852857433
+  },
+  {
+    "term": "activity",
+    "score": 19.22103039245651
+  },
+  {
+    "term": "address",
+    "score": 19.06729754167884
+  },
+  {
+    "term": "reason",
+    "score": 19.026632288760243
+  },
+  {
+    "term": "access",
+    "score": 18.90187437373823
+  },
+  {
+    "term": "refund",
+    "score": 17.777636217631187
+  },
+  {
+    "term": "screen",
+    "score": 17.641424290181572
+  },
+  {
+    "term": "subscription",
+    "score": 17.056756437988447
+  },
+  {
+    "term": "credit",
+    "score": 17.029140240150596
+  },
+  {
+    "term": "details",
+    "score": 16.796167192034222
+  },
+  {
+    "term": "activities",
+    "score": 16.25409362807416
+  },
+  {
+    "term": "police",
+    "score": 16.1509314403894
+  },
+  {
+    "term": "amount",
+    "score": 15.987418495010113
+  },
+  {
+    "term": "id",
+    "score": 15.884317415197087
+  },
+  {
+    "term": "payment",
+    "score": 15.769614205019979
+  },
+  {
+    "term": "services",
+    "score": 15.744836936160532
+  },
+  {
+    "term": "action",
+    "score": 15.32105415411242
+  }
+]
