@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-const String kWsBase = 'wss://scamdemo.dddanielliu.com/ws';
+const String kWsBase = 'wss://vision.futuremedialab.tw:1688/ws';
 
 const Color backgroundColor = Color(0xFFFFF8E2);
 const Color buttonColor = Color(0xFF439293);

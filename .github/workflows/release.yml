@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      app_name: ${{ steps.tag.outputs.app_name }}
     steps:
       - uses: actions/checkout@v4
       - id: tag
@@ -19,6 +20,7 @@ jobs:
           VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | tr -d "'\"")
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "tag=v${VERSION}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "app_name=fraud-detector" >> "$GITHUB_OUTPUT"
 
   # ── Android APK (debug-signed) ────────────────────────────────────────────────
   build-android:
@@ -42,11 +44,13 @@ jobs:
 
       - run: flutter pub get
       - run: flutter build apk --release
+      - name: Rename Android APK
+        run: mv frontend/build/app/outputs/flutter-apk/app-release.apk frontend/build/app/outputs/flutter-apk/${{ needs.version.outputs.app_name }}-android-${{ needs.version.outputs.tag }}.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: frontend/build/app/outputs/flutter-apk/app-release.apk
+          path: frontend/build/app/outputs/flutter-apk/${{ needs.version.outputs.app_name }}-android-${{ needs.version.outputs.tag }}.apk
           retention-days: 1
 
   # ── iOS .app (no code signing) ────────────────────────────────────────────────
@@ -72,12 +76,12 @@ jobs:
           cd build/ios/iphoneos
           mkdir -p Payload
           cp -r Runner.app Payload/
-          zip -r Runner.unsigned.ipa Payload
+          zip -r ${{ needs.version.outputs.app_name }}-ios-${{ needs.version.outputs.tag }}.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
           name: ios-app
-          path: frontend/build/ios/iphoneos/Runner.unsigned.ipa
+          path: frontend/build/ios/iphoneos/${{ needs.version.outputs.app_name }}-ios-${{ needs.version.outputs.tag }}.ipa
           retention-days: 1
 
   # ── Create GitHub Release ─────────────────────────────────────────────────────
@@ -106,9 +110,9 @@ jobs:
 
             **Branch:** `${{ github.ref_name }}`
 
-            > **iOS note:** `Runner.unsigned.ipa` has no code signature. To install on a device, sign it locally with your own certificate or use a tool like [iOS App Signer](https://dantheman827.github.io/ios-app-signer/).
+            > **iOS note:** `${{ needs.version.outputs.app_name }}-ios-${{ needs.version.outputs.tag }}.ipa` has no code signature. To install on a device, sign it locally with your own certificate or use a tool like [iOS App Signer](https://dantheman827.github.io/ios-app-signer/).
           draft: false
           prerelease: false
           files: |
-            artifacts/android/app-release.apk
-            artifacts/ios/Runner.unsigned.ipa
+            artifacts/android/${{ needs.version.outputs.app_name }}-android-${{ needs.version.outputs.tag }}.apk
+            artifacts/ios/${{ needs.version.outputs.app_name }}-ios-${{ needs.version.outputs.tag }}.ipa

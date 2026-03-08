@@ -13,7 +13,7 @@ class ApiConfig {
   // =========================
   // REST API（登入 / chat / food / hangup / logout）
   // =========================
-  static const String apiBaseUrl = 'https://scamdemo.dddanielliu.com';
+  static const String apiBaseUrl = 'https://vision.futuremedialab.tw:1688';
 
   static const String baseUrl = apiBaseUrl;
 
