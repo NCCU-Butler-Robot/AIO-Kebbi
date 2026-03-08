@@ -19,7 +19,7 @@ jobs:
         run: |
           VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | tr -d "'\"")
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "tag=v${VERSION}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}-${SHORT_SHA}" >> " $GITHUB_OUTPUT"
           echo "app_name=fraud-detector" >> "$GITHUB_OUTPUT"
 
   # ── Android APK (debug-signed) ────────────────────────────────────────────────
@@ -44,6 +44,8 @@ jobs:
 
       - run: flutter pub get
       - run: flutter build apk --release
+      - name: Debug - List APK outputs
+        run: ls -la build/app/outputs/flutter-apk/ || echo "Directory does not exist"
       - name: Rename Android APK
         run: mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/${{ needs.version.outputs.app_name }}-android-${{ needs.version.outputs.tag }}.apk
 
@@ -51,7 +53,7 @@ jobs:
         with:
           name: android-apk
           path: build/app/outputs/flutter-apk/${{ needs.version.outputs.app_name }}-android-${{ needs.version.outputs.tag }}.apk
-          retention-days: 1
+          retention-days: 5
 
   # ── iOS .app (no code signing) ────────────────────────────────────────────────
   build-ios:
@@ -82,7 +84,7 @@ jobs:
         with:
           name: ios-app
           path: frontend/build/ios/iphoneos/${{ needs.version.outputs.app_name }}-ios-${{ needs.version.outputs.tag }}.ipa
-          retention-days: 1
+          retention-days: 5
 
   # ── Create GitHub Release ─────────────────────────────────────────────────────
   release:
