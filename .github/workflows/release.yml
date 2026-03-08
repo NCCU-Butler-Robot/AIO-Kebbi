@@ -45,12 +45,12 @@ jobs:
       - run: flutter pub get
       - run: flutter build apk --release
       - name: Rename Android APK
-        run: mv frontend/build/app/outputs/flutter-apk/app-release.apk frontend/build/app/outputs/flutter-apk/${{ needs.version.outputs.app_name }}-android-${{ needs.version.outputs.tag }}.apk
+        run: mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/${{ needs.version.outputs.app_name }}-android-${{ needs.version.outputs.tag }}.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: frontend/build/app/outputs/flutter-apk/${{ needs.version.outputs.app_name }}-android-${{ needs.version.outputs.tag }}.apk
+          path: build/app/outputs/flutter-apk/${{ needs.version.outputs.app_name }}-android-${{ needs.version.outputs.tag }}.apk
           retention-days: 1
 
   # ── iOS .app (no code signing) ────────────────────────────────────────────────
