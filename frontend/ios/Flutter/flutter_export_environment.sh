@@ -1,7 +1,7 @@
 #!/bin/sh
 # This is a generated file; do not edit or check into version control.
-export "FLUTTER_ROOT=/Users/louisliu/development/flutter"
-export "FLUTTER_APPLICATION_PATH=/Users/louisliu/Desktop/專題/kebbi_fraud_detect_app_test"
+export "FLUTTER_ROOT=/usr/local/flutter"
+export "FLUTTER_APPLICATION_PATH=/app/frontend"
 export "COCOAPODS_PARALLEL_CODE_SIGN=true"
 export "FLUTTER_TARGET=lib/main.dart"
 export "FLUTTER_BUILD_DIR=build"
