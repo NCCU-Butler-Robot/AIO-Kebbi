@@ -19,7 +19,7 @@ jobs:
         run: |
           VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | tr -d "'\"")
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "tag=v${VERSION}-${SHORT_SHA}" >> " $GITHUB_OUTPUT"
+          echo "tag=v${VERSION}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
           echo "app_name=fraud-detector" >> "$GITHUB_OUTPUT"
 
   # ── Android APK (debug-signed) ────────────────────────────────────────────────
