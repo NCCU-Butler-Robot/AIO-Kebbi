@@ -52,7 +52,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: build/app/outputs/flutter-apk/${{ needs.version.outputs.app_name }}-android-${{ needs.version.outputs.tag }}.apk
+          path: frontend/build/app/outputs/flutter-apk/${{ needs.version.outputs.app_name }}-android-${{ needs.version.outputs.tag }}.apk
           retention-days: 5
 
   # ── iOS .app (no code signing) ────────────────────────────────────────────────
