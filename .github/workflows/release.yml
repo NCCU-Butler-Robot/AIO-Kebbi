@@ -65,17 +65,19 @@ jobs:
           cache: true
 
       - run: flutter pub get
-      - run: flutter build ios --simulator
+      - run: flutter build ios --release --no-codesign
 
-      - name: Zip Runner.app
+      - name: Package into unsigned IPA
         run: |
-          cd build/ios/iphonesimulator
-          zip -r Runner.app.zip Runner.app
+          cd build/ios/iphoneos
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          zip -r Runner.unsigned.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
           name: ios-app
-          path: frontend/build/ios/iphonesimulator/Runner.app.zip
+          path: frontend/build/ios/iphoneos/Runner.unsigned.ipa
           retention-days: 1
 
   # ── Create GitHub Release ─────────────────────────────────────────────────────
@@ -104,9 +106,9 @@ jobs:
 
             **Branch:** `${{ github.ref_name }}`
 
-            > **iOS note:** `Runner.app.zip` is unsigned. To install on a device, sign it locally with your own certificate or use a tool like [iOS App Signer](https://dantheman827.github.io/ios-app-signer/).
+            > **iOS note:** `Runner.unsigned.ipa` has no code signature. To install on a device, sign it locally with your own certificate or use a tool like [iOS App Signer](https://dantheman827.github.io/ios-app-signer/).
           draft: false
           prerelease: false
           files: |
             artifacts/android/app-release.apk
-            artifacts/ios/Runner.app.zip
+            artifacts/ios/Runner.unsigned.ipa
