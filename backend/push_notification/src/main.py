@@ -220,6 +220,8 @@ async def notify_all(payload: NotificationPayload):
         else:
             failed += 1
 
+    return {"sent": success, "failed": failed}
+
 
 @app.post("/notify/user/{user_id}")
 async def notify_user(user_id: str, payload: NotificationPayload):
