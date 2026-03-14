@@ -148,7 +148,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
       },
       pauseFor: const Duration(seconds: 2),
       listenFor: const Duration(seconds: 30),
-      listenOptions: const SpeechListenOptions(partialResults: true),
+      listenOptions: SpeechListenOptions(partialResults: true),
     );
   }
 
