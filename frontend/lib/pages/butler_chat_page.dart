@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 import '../constants.dart';
@@ -47,6 +48,15 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   }
 
   Future<void> _initSpeech() async {
+    // Explicitly request microphone permission first (required in 7.x)
+    final micStatus = await Permission.microphone.request();
+    if (micStatus != PermissionStatus.granted) {
+      if (mounted) {
+        setState(() => _liveTranscript = 'Microphone permission denied.');
+      }
+      return;
+    }
+
     _speechAvailable = await _speech.initialize(
       onStatus: (status) {
         // 'listening' | 'notListening' | 'done' | 'doneNoResult'
