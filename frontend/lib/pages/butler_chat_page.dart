@@ -146,8 +146,10 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
           });
         }
       },
-      pauseFor: const Duration(seconds: 2),  // Auto-stop after 2s silence
-      listenFor: const Duration(seconds: 30),
+      listenOptions: SpeechListenOptions(
+        pauseFor: const Duration(seconds: 2),  // Auto-stop after 2s silence
+        listenFor: const Duration(seconds: 30),
+      ),
     );
   }
 
