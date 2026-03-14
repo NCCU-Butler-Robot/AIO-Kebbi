@@ -45,15 +45,27 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   void initState() {
     super.initState();
     AudioService.I.init();
-    _initSpeech();
+    // Do NOT call initialize() here — calling it without RECORD_AUDIO
+    // permission leaves the SpeechToText instance in a broken state on
+    // Android, making the second (post-permission) initialize() silently
+    // fail. We initialize lazily on first mic tap instead.
   }
 
-  Future<void> _initSpeech() async {
-    // Silent initialization at page load — no permission dialog yet
+  /// Request mic permission then initialize STT (called once on first tap).
+  Future<bool> _ensureSpeechReady() async {
+    // Already initialized successfully — nothing to do.
+    if (_speechAvailable) return true;
+
+    final micStatus = await Permission.microphone.request();
+    if (micStatus != PermissionStatus.granted) {
+      if (mounted) setState(() => _liveTranscript = 'Microphone permission denied.');
+      return false;
+    }
+
     _speechAvailable = await _speech.initialize(
       onStatus: (status) {
-        // 'notListening' also fires during brief Android pauses mid-session
-        // — only treat 'done' / 'doneNoResult' as a true end of session.
+        // 'notListening' fires briefly mid-session on Android — only
+        // 'done' / 'doneNoResult' means the session truly ended.
         if ((status == 'done' || status == 'doneNoResult') && mounted) {
           setState(() => _isRecording = false);
         }
@@ -68,37 +80,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
         }
       },
     );
-    if (mounted) setState(() {});
-  }
 
-  /// Request mic permission and (re-)initialize STT if needed.
-  /// Called lazily the first time the user taps the mic button.
-  Future<bool> _ensureSpeechReady() async {
-    final micStatus = await Permission.microphone.request();
-    if (micStatus != PermissionStatus.granted) {
-      if (mounted) setState(() => _liveTranscript = 'Microphone permission denied.');
-      return false;
-    }
-    // Re-initialize if the silent init at page load failed (e.g. permission
-    // was not yet granted at that point).
-    if (!_speechAvailable) {
-      _speechAvailable = await _speech.initialize(
-        onStatus: (status) {
-          if ((status == 'done' || status == 'doneNoResult') && mounted) {
-            setState(() => _isRecording = false);
-          }
-        },
-        onError: (error) {
-          if (mounted) {
-            setState(() {
-              _isRecording = false;
-              _autoSendOnResult = false;
-              _liveTranscript = 'Voice error: ${error.errorMsg}';
-            });
-          }
-        },
-      );
-    }
     if (!_speechAvailable) {
       if (mounted) setState(() => _liveTranscript = 'Speech recognition not available on this device.');
       return false;
