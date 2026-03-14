@@ -34,6 +34,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   // Speech-to-text
   final SpeechToText _speech = SpeechToText();
   bool _speechAvailable = false;
+  bool _isBusy = false; // true while permission request or STT init is running
   // true → auto-send when silence detected; false → manual stop, just fill text field
   bool _autoSendOnResult = false;
 
@@ -126,7 +127,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   }
 
   Future<void> _toggleRecording() async {
-    if (_isLoading) return;
+    if (_isLoading || _isBusy) return;
 
     if (_isRecording) {
       // Manual stop → fill text field but DON'T auto-send
@@ -141,59 +142,81 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
       return;
     }
 
-    // Request permission and (re-)initialize lazily on first tap
-    final ready = await _ensureSpeechReady();
-    if (!ready) return;
-
+    // Show busy state immediately so user gets visual feedback
     setState(() {
-      _isRecording = true;
-      _liveTranscript = 'Listening…';
-      _textController.clear();
+      _isBusy = true;
+      _liveTranscript = 'Initializing microphone…';
     });
 
-    _autoSendOnResult = true;
+    try {
+      // Request permission and (re-)initialize lazily on first tap
+      final ready = await _ensureSpeechReady();
+      if (!ready) {
+        if (mounted) setState(() => _isBusy = false);
+        return;
+      }
 
-    final started = await _speech.listen(
-      onResult: (result) {
-        if (!mounted) return;
-
-        if (result.finalResult) {
-          final words = result.recognizedWords;
-          setState(() {
-            _isRecording = false;
-            _liveTranscript =
-                words.isNotEmpty ? words : 'No speech detected.';
-            if (words.isNotEmpty) _textController.text = words;
-          });
-
-          // Auto-send only when silence detection triggered (not manual stop)
-          if (_autoSendOnResult && words.isNotEmpty) {
-            _autoSendOnResult = false;
-            _sendText();
-          } else {
-            _autoSendOnResult = false;
-          }
-        } else {
-          // Live transcript while speaking
-          setState(() {
-            _liveTranscript = result.recognizedWords.isNotEmpty
-                ? result.recognizedWords
-                : 'Listening…';
-          });
-        }
-      },
-      pauseFor: const Duration(seconds: 2),
-      listenFor: const Duration(seconds: 30),
-      listenOptions: SpeechListenOptions(partialResults: true),
-    );
-
-    // listen() returns false if it couldn't start
-    if (!started && mounted) {
+      if (!mounted) return;
       setState(() {
-        _isRecording = false;
-        _autoSendOnResult = false;
-        _liveTranscript = 'Could not start recording. Please try again.';
+        _isBusy = false;
+        _isRecording = true;
+        _liveTranscript = 'Listening…';
+        _textController.clear();
       });
+
+      _autoSendOnResult = true;
+
+      final started = await _speech.listen(
+        onResult: (result) {
+          if (!mounted) return;
+
+          if (result.finalResult) {
+            final words = result.recognizedWords;
+            setState(() {
+              _isRecording = false;
+              _liveTranscript =
+                  words.isNotEmpty ? words : 'No speech detected.';
+              if (words.isNotEmpty) _textController.text = words;
+            });
+
+            // Auto-send only when silence detection triggered (not manual stop)
+            if (_autoSendOnResult && words.isNotEmpty) {
+              _autoSendOnResult = false;
+              _sendText();
+            } else {
+              _autoSendOnResult = false;
+            }
+          } else {
+            // Live partial transcript while speaking
+            setState(() {
+              _liveTranscript = result.recognizedWords.isNotEmpty
+                  ? result.recognizedWords
+                  : 'Listening…';
+            });
+          }
+        },
+        pauseFor: const Duration(seconds: 2),
+        listenFor: const Duration(seconds: 30),
+        listenOptions: SpeechListenOptions(partialResults: true),
+      );
+
+      // listen() returns false if it couldn't start
+      if (!started && mounted) {
+        setState(() {
+          _isRecording = false;
+          _autoSendOnResult = false;
+          _liveTranscript = 'Could not start recording. Please try again.';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isBusy = false;
+          _isRecording = false;
+          _autoSendOnResult = false;
+          _liveTranscript = 'Mic error: $e';
+        });
+      }
     }
   }
 
@@ -365,7 +388,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
 
                     // 麥克風
                     InkWell(
-                      onTap: _isLoading ? null : _toggleRecording,
+                      onTap: (_isLoading || _isBusy) ? null : _toggleRecording,
                       borderRadius: BorderRadius.circular(28),
                       child: Container(
                         width: 56,
@@ -373,14 +396,22 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                         decoration: BoxDecoration(
                           color: _isRecording
                               ? const Color(0xff29d97a)
-                              : kSeaBlue,
+                              : _isBusy
+                                  ? Colors.grey
+                                  : kSeaBlue,
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(
-                          _isRecording ? Icons.mic : Icons.mic_off,
-                          color: Colors.black,
-                          size: 26,
-                        ),
+                        child: _isBusy
+                            ? const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: CircularProgressIndicator(
+                                    color: Colors.white, strokeWidth: 2),
+                              )
+                            : Icon(
+                                _isRecording ? Icons.mic : Icons.mic_off,
+                                color: Colors.black,
+                                size: 26,
+                              ),
                       ),
                     ),
                   ],
