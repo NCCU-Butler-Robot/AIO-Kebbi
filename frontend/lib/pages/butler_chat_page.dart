@@ -48,18 +48,9 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   }
 
   Future<void> _initSpeech() async {
-    // Explicitly request microphone permission first (required in 7.x)
-    final micStatus = await Permission.microphone.request();
-    if (micStatus != PermissionStatus.granted) {
-      if (mounted) {
-        setState(() => _liveTranscript = 'Microphone permission denied.');
-      }
-      return;
-    }
-
+    // Silent initialization at page load — no permission dialog yet
     _speechAvailable = await _speech.initialize(
       onStatus: (status) {
-        // 'listening' | 'notListening' | 'done' | 'doneNoResult'
         if ((status == 'done' || status == 'notListening') && mounted) {
           setState(() => _isRecording = false);
         }
@@ -75,6 +66,41 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
       },
     );
     if (mounted) setState(() {});
+  }
+
+  /// Request mic permission and (re-)initialize STT if needed.
+  /// Called lazily the first time the user taps the mic button.
+  Future<bool> _ensureSpeechReady() async {
+    final micStatus = await Permission.microphone.request();
+    if (micStatus != PermissionStatus.granted) {
+      if (mounted) setState(() => _liveTranscript = 'Microphone permission denied.');
+      return false;
+    }
+    // Re-initialize if the silent init at page load failed (e.g. permission
+    // was not yet granted at that point).
+    if (!_speechAvailable) {
+      _speechAvailable = await _speech.initialize(
+        onStatus: (status) {
+          if ((status == 'done' || status == 'notListening') && mounted) {
+            setState(() => _isRecording = false);
+          }
+        },
+        onError: (error) {
+          if (mounted) {
+            setState(() {
+              _isRecording = false;
+              _autoSendOnResult = false;
+              _liveTranscript = 'Voice error: ${error.errorMsg}';
+            });
+          }
+        },
+      );
+    }
+    if (!_speechAvailable) {
+      if (mounted) setState(() => _liveTranscript = 'Speech recognition not available on this device.');
+      return false;
+    }
+    return true;
   }
 
   @override
@@ -113,11 +139,9 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
       return;
     }
 
-    if (!_speechAvailable) {
-      setState(
-          () => _liveTranscript = 'Speech recognition not available on this device.');
-      return;
-    }
+    // Request permission and (re-)initialize lazily on first tap
+    final ready = await _ensureSpeechReady();
+    if (!ready) return;
 
     setState(() {
       _isRecording = true;
@@ -127,7 +151,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
 
     _autoSendOnResult = true;
 
-    await _speech.listen(
+    final started = await _speech.listen(
       onResult: (result) {
         if (!mounted) return;
 
@@ -160,6 +184,15 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
       listenFor: const Duration(seconds: 30),
       listenOptions: SpeechListenOptions(partialResults: true),
     );
+
+    // listen() returns false if it couldn't start
+    if (!started && mounted) {
+      setState(() {
+        _isRecording = false;
+        _autoSendOnResult = false;
+        _liveTranscript = 'Could not start recording. Please try again.';
+      });
+    }
   }
 
   Future<void> _sendText() async {

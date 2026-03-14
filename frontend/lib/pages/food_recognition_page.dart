@@ -26,15 +26,6 @@ class _FoodRecognitionPageState extends State<FoodRecognitionPage> {
   bool _loading = false;
   String? _error;
 
-  @override
-  void initState() {
-    super.initState();
-    // Auto-open camera when page loads
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _pick(ImageSource.camera);
-    });
-  }
-
   Future<void> _pick(ImageSource source) async {
     try {
       final f = await _picker.pickImage(source: source, imageQuality: 90);
