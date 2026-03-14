@@ -51,7 +51,9 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     // Silent initialization at page load — no permission dialog yet
     _speechAvailable = await _speech.initialize(
       onStatus: (status) {
-        if ((status == 'done' || status == 'notListening') && mounted) {
+        // 'notListening' also fires during brief Android pauses mid-session
+        // — only treat 'done' / 'doneNoResult' as a true end of session.
+        if ((status == 'done' || status == 'doneNoResult') && mounted) {
           setState(() => _isRecording = false);
         }
       },
@@ -81,7 +83,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     if (!_speechAvailable) {
       _speechAvailable = await _speech.initialize(
         onStatus: (status) {
-          if ((status == 'done' || status == 'notListening') && mounted) {
+          if ((status == 'done' || status == 'doneNoResult') && mounted) {
             setState(() => _isRecording = false);
           }
         },
