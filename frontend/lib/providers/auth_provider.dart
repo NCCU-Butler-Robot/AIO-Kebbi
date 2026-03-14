@@ -30,12 +30,16 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> init() async {
     _token = await SecureStorage.readToken();
+    // 將 storage 裡的 token 注入 ApiService，
+    // 否則 App 重啟後 ApiService._accessToken 會是 null 導致 401
+    if (_token != null && _token!.isNotEmpty) {
+      sl<ApiService>().setAccessToken(_token);
+    }
     try {
       _uuid = await SecureStorage.readUuid();
       _name = await SecureStorage.readName();
       _username = await SecureStorage.readUsername();
-    } catch (_) {
-    }
+    } catch (_) {}
     notifyListeners();
   }
 

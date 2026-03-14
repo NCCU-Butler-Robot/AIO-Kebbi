@@ -18,7 +18,8 @@ class ApiConfig {
   static const String baseUrl = apiBaseUrl;
 
   // ---- REST paths (依你 Postman 截圖) ----
-  static const String loginPath = '/api/login';
+  static const String loginPath = '/auth/login';
+  static const String statusPath = '/auth/status';
   static const String chatPath = '/api/chat/';
   static const String foodRecognitionPath = '/api/food-recognition/';
   static const String hangupPath = '/api/hangup';
@@ -38,7 +39,7 @@ class ApiConfig {
 
   static const String defaultInstallationId = 'device001';
 
-  static const bool devBypassLogin = true;
+  static const bool devBypassLogin = false;
 
 // 給一個假 token，後端開了再改回 false
   static const String devFakeAccessToken = 'dev-fake-token';

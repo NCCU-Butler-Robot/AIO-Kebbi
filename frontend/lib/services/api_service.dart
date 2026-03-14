@@ -61,28 +61,56 @@ class ApiService {
   }
 
   /// 登入：成功回傳 LoginResponse，失敗丟 Exception
+  /// 後端 /auth/login 使用 OAuth2 form-encoded，僅回傳 access_token。
+  /// 需再呼叫 /auth/status 取得 uuid / name / username。
   Future<LoginResponse> login(LoginRequest req) async {
     if (ApiConfig.mockLogin) return _mockLogin(req);
 
-    // ignore: prefer_const_declarations
-    final path = ApiConfig.loginPath;
-    debugPrint('[API] POST ${_dio.options.baseUrl}$path');
+    debugPrint('[API] POST ${_dio.options.baseUrl}${ApiConfig.loginPath}');
 
-    final resp = await _dio.post(
-      path,
-      data: req.toJson(),
+    // Step 1: 取得 access_token（x-www-form-urlencoded）
+    final loginResp = await _dio.post(
+      ApiConfig.loginPath,
+      data: {
+        'username': req.username,
+        'password': req.password,
+        'grant_type': 'password',
+      },
       options: Options(
+        contentType: Headers.formUrlEncodedContentType,
         extra: const {'skipAuth': true},
       ),
     );
 
-    if (resp.statusCode == 200 && resp.data is Map) {
-      final map = Map<String, dynamic>.from(resp.data as Map);
-      return LoginResponse.fromJson(map);
+    if (loginResp.statusCode != 200) {
+      final body = loginResp.data is String
+          ? loginResp.data
+          : jsonEncode(loginResp.data);
+      throw Exception('Login failed (${loginResp.statusCode}) $body');
     }
 
-    final body = resp.data is String ? resp.data : jsonEncode(resp.data);
-    throw Exception('Login failed (${resp.statusCode}) $body');
+    final accessToken =
+        (loginResp.data as Map)['access_token'] as String;
+
+    // Step 2: 注入 token，讓下一個請求帶上 Authorization header
+    setAccessToken(accessToken);
+
+    // Step 3: 取得使用者資訊（uuid / name / username）
+    debugPrint('[API] GET ${_dio.options.baseUrl}${ApiConfig.statusPath}');
+    final statusResp = await _dio.get(ApiConfig.statusPath);
+
+    if (statusResp.statusCode != 200) {
+      throw Exception(
+          'Failed to get user info (${statusResp.statusCode})');
+    }
+
+    final info = Map<String, dynamic>.from(statusResp.data as Map);
+    return LoginResponse(
+      accessToken: accessToken,
+      uuid: info['uuid'] as String,
+      name: info['name'] as String,
+      username: info['username'] as String,
+    );
   }
 
   Future<LoginResponse> _mockLogin(LoginRequest req) async {
