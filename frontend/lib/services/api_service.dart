@@ -182,7 +182,21 @@ class ApiService {
     }
 
     final map = Map<String, dynamic>.from(resp.data as Map);
-    return map['detect_url'] as String? ?? 'https://food.bestweiwei.dpdns.org';
+
+    // Backend signals explicit failure
+    if (map.containsKey('error')) {
+      throw Exception('Food recognition unavailable. Please try again later.');
+    }
+
+    final url = map['detect_url'] as String? ?? '';
+
+    // food_service fallback — external Flask API failed (e.g. DB error)
+    if (url.isEmpty || url == 'https://food.bestweiwei.dpdns.org') {
+      throw Exception(
+          'Food recognition failed. Please try a clearer photo or check service status.');
+    }
+
+    return url;
   }
 
   Future<void> hangup({required String callId}) async {

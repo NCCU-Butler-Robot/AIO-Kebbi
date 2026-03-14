@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 
 import '../constants.dart';
 import '../di/service_locator.dart';
@@ -29,6 +30,12 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   bool _isRecording = false;
   String _liveTranscript = 'Tap mic to start recording...';
 
+  // Speech-to-text
+  final SpeechToText _speech = SpeechToText();
+  bool _speechAvailable = false;
+  // true → auto-send when silence detected; false → manual stop, just fill text field
+  bool _autoSendOnResult = false;
+
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
 
@@ -36,15 +43,35 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   void initState() {
     super.initState();
     AudioService.I.init();
+    _initSpeech();
+  }
+
+  Future<void> _initSpeech() async {
+    _speechAvailable = await _speech.initialize(
+      onStatus: (status) {
+        // 'listening' | 'notListening' | 'done' | 'doneNoResult'
+        if ((status == 'done' || status == 'notListening') && mounted) {
+          setState(() => _isRecording = false);
+        }
+      },
+      onError: (error) {
+        if (mounted) {
+          setState(() {
+            _isRecording = false;
+            _autoSendOnResult = false;
+            _liveTranscript = 'Voice error: ${error.errorMsg}';
+          });
+        }
+      },
+    );
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _speech.cancel();
     _textController.dispose();
     _scrollCtrl.dispose();
-    if (_isRecording) {
-      AudioService.I.stopRecord();
-    }
     super.dispose();
   }
 
@@ -61,29 +88,67 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   }
 
   Future<void> _toggleRecording() async {
+    if (_isLoading) return;
+
     if (_isRecording) {
-      // 停止錄音
+      // Manual stop → fill text field but DON'T auto-send
+      _autoSendOnResult = false;
+      await _speech.stop();
       setState(() {
         _isRecording = false;
-        _liveTranscript = 'Recording stopped.';
+        _liveTranscript = _textController.text.isNotEmpty
+            ? _textController.text
+            : 'Tap mic to start recording...';
       });
-      final file = await AudioService.I.stopRecord();
-      // 語音轉文字尚未整合（需 STT 服務），目前停止後不自動送出
-      if (file != null) {
-        setState(() => _liveTranscript = 'Recording ready. Type or send text.');
-      }
-    } else {
-      final granted = await AudioService.I.ensureMicPermission();
-      if (!granted) {
-        setState(() => _liveTranscript = 'Microphone permission denied.');
-        return;
-      }
-      await AudioService.I.startRecord();
-      setState(() {
-        _isRecording = true;
-        _liveTranscript = 'Listening…';
-      });
+      return;
     }
+
+    if (!_speechAvailable) {
+      setState(
+          () => _liveTranscript = 'Speech recognition not available on this device.');
+      return;
+    }
+
+    setState(() {
+      _isRecording = true;
+      _liveTranscript = 'Listening…';
+      _textController.clear();
+    });
+
+    _autoSendOnResult = true;
+
+    await _speech.listen(
+      onResult: (result) {
+        if (!mounted) return;
+
+        if (result.finalResult) {
+          final words = result.recognizedWords;
+          setState(() {
+            _isRecording = false;
+            _liveTranscript =
+                words.isNotEmpty ? words : 'No speech detected.';
+            if (words.isNotEmpty) _textController.text = words;
+          });
+
+          // Auto-send only when silence detection triggered (not manual stop)
+          if (_autoSendOnResult && words.isNotEmpty) {
+            _autoSendOnResult = false;
+            _sendText();
+          } else {
+            _autoSendOnResult = false;
+          }
+        } else {
+          // Live transcript while speaking
+          setState(() {
+            _liveTranscript = result.recognizedWords.isNotEmpty
+                ? result.recognizedWords
+                : 'Listening…';
+          });
+        }
+      },
+      pauseFor: const Duration(seconds: 2),  // Auto-stop after 2s silence
+      listenFor: const Duration(seconds: 30),
+    );
   }
 
   Future<void> _sendText() async {
@@ -95,6 +160,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
           from: _Speaker.user, text: txt, time: _fmtTime(DateTime.now())));
       _textController.clear();
       _isLoading = true;
+      _liveTranscript = 'Butler is thinking…';
     });
     _scrollToBottom();
 
@@ -114,6 +180,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
           text: result.text.isNotEmpty ? result.text : '(no response)',
           time: _fmtTime(DateTime.now()),
         ));
+        _liveTranscript = 'Tap mic to start recording...';
       });
       _scrollToBottom();
 
@@ -127,6 +194,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
           text: 'Error: $e',
           time: _fmtTime(DateTime.now()),
         ));
+        _liveTranscript = 'Tap mic to start recording...';
       });
       _scrollToBottom();
     } finally {
@@ -191,7 +259,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Text(
-                        _isLoading ? 'Butler is thinking…' : _liveTranscript,
+                        _liveTranscript,
                         textAlign: TextAlign.center,
                         style: GoogleFonts.itim(
                             fontSize: 15, color: Colors.white),
@@ -362,7 +430,11 @@ class _FakeSiriWaveState extends State<FakeSiriWave> {
         for (int i = 0; i < _heights.length; i++) {
           _heights[i] = 8.0 +
               (20.0 *
-                  (0.3 + 0.7 * ((DateTime.now().millisecondsSinceEpoch + i * 137) % 1000) / 1000.0));
+                  (0.3 +
+                      0.7 *
+                          ((DateTime.now().millisecondsSinceEpoch + i * 137) %
+                              1000) /
+                          1000.0));
         }
       });
     });
