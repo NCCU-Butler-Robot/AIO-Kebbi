@@ -1,16 +1,15 @@
-
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
-// ignore: unused_import
-import '../pages/webview_page.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-
 
 import '../constants.dart';
+import '../di/service_locator.dart';
+import '../pages/webview_page.dart';
+import '../services/api_service.dart';
 
 class FoodRecognitionPage extends StatefulWidget {
   const FoodRecognitionPage({super.key});
@@ -23,91 +22,48 @@ class _FoodRecognitionPageState extends State<FoodRecognitionPage> {
   final _picker = ImagePicker();
 
   XFile? _file;
-  // ignore: prefer_final_fields
+  Uint8List? _fileBytes; // 供 Web 平台預覽用
   bool _loading = false;
-
-  int? _countdown; // null = 沒倒數；3/2/1 = 倒數中
   String? _error;
-
-  Future<void> _startCameraCountdown() async {
-    setState(() {
-      _error = null;
-      _countdown = 3;
-      _file = null;
-    });
-
-    for (int i = 3; i >= 1; i--) {
-      setState(() => _countdown = i);
-      await Future.delayed(const Duration(seconds: 1));
-    }
-
-    setState(() => _countdown = null);
-
-    // 倒數完 → 開相機（使用者按快門）
-    await _pick(ImageSource.camera);
-  }
 
   Future<void> _pick(ImageSource source) async {
     try {
       final f = await _picker.pickImage(source: source, imageQuality: 90);
       if (f == null) return;
-
+      final bytes = await f.readAsBytes();
       setState(() {
         _file = f;
+        _fileBytes = bytes;
         _error = null;
       });
     } catch (e) {
-      setState(() => _error = 'Image selection failed：$e');
+      setState(() => _error = 'Image selection failed: $e');
     }
   }
 
- Future<void> _onStartIdentifyPressed() async {
-  const recipeUrl = 'https://food.bestweiwei.dpdns.org'; //demo test
+  Future<void> _onStartIdentifyPressed() async {
+    if (_file == null || _loading) return;
 
-  final go = await showDialog<bool>(
-    context: context,
-    barrierDismissible: true,
-    builder: (context) {
-      return AlertDialog(
-        title: const Text('Open Recipe Website?'),
-        content: const Text('Do you want to open the recipe website now?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('No'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Yes'),
-          ),
-        ],
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final detectUrl = await sl<ApiService>().uploadFoodImage(_file!);
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RecipeWebViewPage(url: detectUrl),
+        ),
       );
-    },
-  );
-
-  if (go == true) {
-    await _openRecipeUrl(recipeUrl);
-  }
-}
-
-Future<void> _openRecipeUrl(String url) async {
-  final uri = Uri.parse(url);
-
-  if (kIsWeb) {
-    final ok = await launchUrl(uri, mode: LaunchMode.platformDefault);
-    if (!ok) {
-      setState(() => _error = 'Failed to open url: $url');
+    } catch (e) {
+      setState(() => _error = 'Recognition failed: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
-    return;
   }
-
-  final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-  if (!ok) {
-    setState(() => _error = 'Failed to open url: $url');
-  }
-}
-
-
 
   Widget _actionTile({
     required IconData icon,
@@ -130,7 +86,8 @@ Future<void> _openRecipeUrl(String url) async {
             children: [
               Icon(icon, size: 44, color: iconColor),
               const SizedBox(height: 10),
-              Text(title, style: GoogleFonts.itim(fontSize: 16, color: textColor)),
+              Text(title,
+                  style: GoogleFonts.itim(fontSize: 16, color: textColor)),
               const SizedBox(height: 6),
               Text(
                 subtitle,
@@ -162,20 +119,21 @@ Future<void> _openRecipeUrl(String url) async {
       );
     }
 
+    final imageWidget = kIsWeb && _fileBytes != null
+        ? Image.memory(_fileBytes!,
+            height: 220, width: double.infinity, fit: BoxFit.cover)
+        : Image.file(File(_file!.path),
+            height: 220, width: double.infinity, fit: BoxFit.cover);
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
-      child: Image.file(
-        File(_file!.path),
-        height: 220,
-        width: double.infinity,
-        fit: BoxFit.cover,
-      ),
+      child: imageWidget,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final countdown = _countdown;
+    final canIdentify = _file != null && !_loading;
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -191,43 +149,35 @@ Future<void> _openRecipeUrl(String url) async {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // ===== 倒數顯示=====
-            if (countdown != null) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 20),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white),
-                ),
-                child: Text(
-                  '$countdown',
-                  style: GoogleFonts.itim(fontSize: 48, color: textColor),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // ===== 圖片預覽）=====
+            // ===== 圖片預覽 =====
             _preview(),
             const SizedBox(height: 14),
 
-            // ===== 開始辨識按鈕=====
+            // ===== 開始辨識按鈕 =====
             InkWell(
-              onTap: (_loading) ? null : _onStartIdentifyPressed,
+              onTap: canIdentify ? _onStartIdentifyPressed : null,
               borderRadius: BorderRadius.circular(12),
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 decoration: BoxDecoration(
-                  color: (_file == null || _loading) ? Colors.white24 : kSeaBlue,
+                  color: canIdentify ? kSeaBlue : Colors.white24,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 alignment: Alignment.center,
-                child: Text(
-                  'Start Identify (API)',
-                  style: GoogleFonts.itim(fontSize: 16, color: textColor),
-                ),
+                child: _loading
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Text(
+                        'Start Identify',
+                        style:
+                            GoogleFonts.itim(fontSize: 16, color: textColor),
+                      ),
               ),
             ),
 
@@ -236,34 +186,31 @@ Future<void> _openRecipeUrl(String url) async {
               Text(
                 _error!,
                 style: GoogleFonts.itim(
-                  fontSize: 14,
-                  color: const Color(0xfff7433c),
-                ),
+                    fontSize: 14, color: const Color(0xfff7433c)),
               ),
             ],
 
             const SizedBox(height: 24),
 
-            // ===== 拍照 / 上傳按鈕=====
+            // ===== 拍照 / 上傳按鈕 =====
             Row(
               children: [
                 _actionTile(
                   icon: Icons.photo_camera,
                   title: 'Camera',
-                  subtitle: 'Open camera in 3 seconds',
-                  onTap: _loading ? null : _startCameraCountdown,
+                  subtitle: 'Take a photo',
+                  onTap: _loading ? null : () => _pick(ImageSource.camera),
                 ),
                 const SizedBox(width: 12),
                 _actionTile(
                   icon: Icons.photo_library,
                   title: 'Upload Photo',
-                  subtitle: 'Select a picture from album',
+                  subtitle: 'Select from album',
                   onTap: _loading ? null : () => _pick(ImageSource.gallery),
                 ),
               ],
             ),
           ],
-
         ),
       ),
     );

@@ -113,6 +113,16 @@ class AudioService {
     }
   }
 
+  Future<void> playMp3Bytes(Uint8List bytes) async {
+    await init();
+    await _player.setVolume(_playerVolume);
+    await _player.startPlayer(
+      fromDataBuffer: bytes,
+      codec: Codec.mp3,
+      whenFinished: () {},
+    );
+  }
+
   // ---------- 即時串流錄音 ----------
   Future<void> startStreaming(void Function(Uint8List bytes) onChunk) async {
     if (_streaming) return;

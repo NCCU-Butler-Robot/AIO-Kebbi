@@ -1,11 +1,27 @@
 // lib/services/api_service.dart
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../config/api_config.dart';
 import '../models/login_models.dart';
+
+class ChatResult {
+  final Uint8List? audioBytes;
+  final String text;
+  final String conversationId;
+  final String messageId;
+
+  ChatResult({
+    this.audioBytes,
+    required this.text,
+    required this.conversationId,
+    required this.messageId,
+  });
+}
 
 class ApiService {
   ApiService() {
@@ -13,7 +29,7 @@ class ApiService {
       BaseOptions(
         baseUrl: ApiConfig.baseUrl,
         connectTimeout: const Duration(seconds: 10),
-        receiveTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 60),
         headers: {'Content-Type': 'application/json'},
         validateStatus: (s) => s != null && s < 500,
       ),
@@ -27,6 +43,8 @@ class ApiService {
           if (!skipAuth && _accessToken != null && _accessToken!.isNotEmpty) {
             options.headers['Authorization'] = 'Bearer $_accessToken';
           }
+          options.headers[ApiConfig.installationIdHeader] =
+              ApiConfig.defaultInstallationId;
 
           handler.next(options);
         },
@@ -75,6 +93,68 @@ class ApiService {
       name: req.username.isEmpty ? 'Guest' : req.username,
       username: req.username.isEmpty ? 'guest' : req.username,
     );
+  }
+
+  /// Butler chat：傳文字 → 回傳 MP3 bytes + 文字
+  Future<ChatResult> sendChat({
+    required String prompt,
+    String? conversationId,
+  }) async {
+    final resp = await _dio.post(
+      ApiConfig.chatPath,
+      data: {
+        'prompt': prompt,
+        'initiate_conversation': conversationId == null,
+      },
+      options: Options(responseType: ResponseType.bytes),
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception('Chat failed (${resp.statusCode})');
+    }
+
+    final contentType = resp.headers.value('content-type') ?? '';
+    if (contentType.contains('audio')) {
+      final rawText = resp.headers.value('x-response-text') ?? '';
+      final text = Uri.decodeComponent(rawText);
+      return ChatResult(
+        audioBytes: Uint8List.fromList(resp.data as List<int>),
+        text: text,
+        conversationId: resp.headers.value('x-conversation-id') ?? '',
+        messageId: resp.headers.value('x-message-id') ?? '',
+      );
+    }
+
+    // TTS 失敗 fallback → JSON
+    final json = jsonDecode(
+      utf8.decode(resp.data as List<int>),
+    ) as Map<String, dynamic>;
+    return ChatResult(
+      audioBytes: null,
+      text: json['message'] as String? ?? '',
+      conversationId: json['conversation_id'] as String? ?? '',
+      messageId: json['message_id'] as String? ?? '',
+    );
+  }
+
+  /// Food recognition：上傳圖片 → 回傳 detect_url
+  Future<String> uploadFoodImage(XFile file) async {
+    final bytes = await file.readAsBytes();
+    final formData = FormData.fromMap({
+      'file': MultipartFile.fromBytes(
+        bytes,
+        filename: file.name.isNotEmpty ? file.name : 'photo.jpg',
+      ),
+    });
+
+    final resp = await _dio.post(ApiConfig.foodRecognitionPath, data: formData);
+
+    if (resp.statusCode != 200) {
+      throw Exception('Food recognition failed (${resp.statusCode})');
+    }
+
+    final map = Map<String, dynamic>.from(resp.data as Map);
+    return map['detect_url'] as String? ?? 'https://food.bestweiwei.dpdns.org';
   }
 
   Future<void> hangup({required String callId}) async {
