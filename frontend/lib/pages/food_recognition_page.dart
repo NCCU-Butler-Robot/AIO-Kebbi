@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../constants.dart';
 import '../di/service_locator.dart';
+import '../pages/in_app_camera_page.dart';
 import '../pages/webview_page.dart';
 import '../services/api_service.dart';
 
@@ -25,6 +26,20 @@ class _FoodRecognitionPageState extends State<FoodRecognitionPage> {
   Uint8List? _fileBytes; // 供 Web 平台預覽用
   bool _loading = false;
   String? _error;
+
+  Future<void> _openInAppCamera() async {
+    final result = await Navigator.push<XFile?>(
+      context,
+      MaterialPageRoute(builder: (_) => const InAppCameraPage()),
+    );
+    if (result == null) return;
+    final bytes = await result.readAsBytes();
+    setState(() {
+      _file = result;
+      _fileBytes = bytes;
+      _error = null;
+    });
+  }
 
   Future<void> _pick(ImageSource source) async {
     try {
@@ -199,7 +214,7 @@ class _FoodRecognitionPageState extends State<FoodRecognitionPage> {
                   icon: Icons.photo_camera,
                   title: 'Camera',
                   subtitle: 'Take a photo',
-                  onTap: _loading ? null : () => _pick(ImageSource.camera),
+                  onTap: _loading ? null : _openInAppCamera,
                 ),
                 const SizedBox(width: 12),
                 _actionTile(
