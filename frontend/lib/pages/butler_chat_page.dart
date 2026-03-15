@@ -129,9 +129,16 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
         // ── Kebbi robot: NuwaSDK STT ─────────────────────
         try {
           await KebbiService.startSTT();
-        } catch (_) {
-          // Nuwa service unavailable at runtime — fall back to speech_to_text
-          _useKebbi = false;
+        } catch (e) {
+          // NuwaSDK failed — speech_to_text won't work on Kebbi either,
+          // so surface the real error instead of falling through.
+          if (mounted) {
+            setState(() {
+              _isBusy = false;
+              _liveTranscript = 'NuwaSDK STT error: $e';
+            });
+          }
+          return;
         }
       }
 
@@ -147,9 +154,12 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
             onError: (error) {
               if (mounted) {
                 setState(() {
+                  _isBusy = false;
                   _isRecording = false;
                   _autoSendOnResult = false;
-                  _liveTranscript = 'Voice error: ${error.errorMsg}';
+                  _liveTranscript = error.errorMsg == 'recognizerNotAvailable'
+                      ? 'Voice input not available on this device.'
+                      : 'Voice error: ${error.errorMsg}';
                 });
               }
             },
@@ -181,11 +191,14 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
       _autoSendOnResult = true;
     } catch (e) {
       if (mounted) {
+        final msg = e.toString().contains('recognizerNotAvailable')
+            ? 'Voice input not available on this device.'
+            : 'Mic error: $e';
         setState(() {
           _isBusy = false;
           _isRecording = false;
           _autoSendOnResult = false;
-          _liveTranscript = 'Mic error: $e';
+          _liveTranscript = msg;
         });
       }
     }
