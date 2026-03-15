@@ -104,10 +104,15 @@ jobs:
       - run: flutter pub get
       - run: flutter build web --release
 
+      - name: Archive Web Build
+        run: |
+          cd build/web
+          zip -r ../../../${{ needs.version.outputs.app_name }}-web-${{ needs.version.outputs.tag }}.zip .
+
       - uses: actions/upload-artifact@v4
         with:
           name: web-build
-          path: frontend/build/web
+          path: ${{ needs.version.outputs.app_name }}-web-${{ needs.version.outputs.tag }}.zip
           retention-days: 5
 
   # ── Create GitHub Release ─────────────────────────────────────────────────────
@@ -147,4 +152,4 @@ jobs:
           files: |
             artifacts/android/${{ needs.version.outputs.app_name }}-android-${{ needs.version.outputs.tag }}.apk
             artifacts/ios/${{ needs.version.outputs.app_name }}-ios-${{ needs.version.outputs.tag }}.ipa
-            artifacts/web/**
+            artifacts/web/${{ needs.version.outputs.app_name }}-web-${{ needs.version.outputs.tag }}.zip
