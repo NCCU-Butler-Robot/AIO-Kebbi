@@ -12,6 +12,17 @@ class KebbiService {
   // STT result callback — set by ButlerChatPage
   static STTResultCallback? _sttCallback;
 
+  /// Returns true if NuwaRobotAPI class is present (i.e. running on Kebbi).
+  static Future<bool> isKebbiAvailable() async {
+    if (!_isAndroidNative) return false;
+    try {
+      final result = await _ch.invokeMethod<bool>('checkKebbi');
+      return result ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Call once at app start (or before using STT) to wire up the incoming
   /// method handler that receives onSTTResult events from native.
   static void setupCallbackHandler() {

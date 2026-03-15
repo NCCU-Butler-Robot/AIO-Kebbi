@@ -8,6 +8,7 @@ import '../di/service_locator.dart';
 import '../services/api_service.dart';
 import '../services/audio_service.dart';
 import '../services/kebbi_service.dart';
+import '../services/vosk_stt_service.dart';
 
 class ButlerChatPage extends StatefulWidget {
   const ButlerChatPage({super.key});
@@ -34,6 +35,9 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   // true → auto-send on final result; false → manual stop, fill text only
   bool _autoSendOnResult = false;
 
+  // STT backend: null = not yet detected, true = Kebbi, false = Vosk
+  bool? _useKebbi;
+
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
 
@@ -50,7 +54,11 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   @override
   void dispose() {
     KebbiService.setSTTCallback(null);
-    KebbiService.stopSTT();
+    if (_useKebbi == true) {
+      KebbiService.stopSTT();
+    } else if (_useKebbi == false) {
+      VoskSttService.stop();
+    }
     _textController.dispose();
     _scrollCtrl.dispose();
     super.dispose();
@@ -90,7 +98,11 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     if (_isRecording) {
       // Manual stop → fill text field, DON'T auto-send
       _autoSendOnResult = false;
-      await KebbiService.stopSTT();
+      if (_useKebbi == true) {
+        await KebbiService.stopSTT();
+      } else {
+        await VoskSttService.stop();
+      }
       setState(() {
         _isRecording = false;
         _liveTranscript = _textController.text.isNotEmpty
@@ -106,7 +118,23 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     });
 
     try {
-      await KebbiService.startSTT();
+      // Detect STT backend once
+      _useKebbi ??= await KebbiService.isKebbiAvailable();
+
+      if (_useKebbi!) {
+        // ── Kebbi robot ─────────────────────────────────
+        await KebbiService.startSTT();
+      } else {
+        // ── Regular Android phone: Vosk ──────────────────
+        if (!VoskSttService.isInitialized) {
+          await VoskSttService.prepare(
+            onProgress: (s) {
+              if (mounted) setState(() => _liveTranscript = s);
+            },
+          );
+        }
+        await VoskSttService.start(_onSTTResult);
+      }
 
       if (!mounted) return;
       setState(() {
