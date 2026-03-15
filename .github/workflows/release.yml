@@ -86,9 +86,33 @@ jobs:
           path: frontend/build/ios/iphoneos/${{ needs.version.outputs.app_name }}-ios-${{ needs.version.outputs.tag }}.ipa
           retention-days: 5
 
+  # ── Web Build ───────────────────────────────────────────────────────────────────
+  build-web:
+    needs: version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter build web --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: frontend/build/web
+          retention-days: 5
+
   # ── Create GitHub Release ─────────────────────────────────────────────────────
   release:
-    needs: [version, build-android, build-ios]
+    needs: [version, build-android, build-ios, build-web]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -102,6 +126,11 @@ jobs:
         with:
           name: ios-app
           path: artifacts/ios
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: artifacts/web
 
       - uses: softprops/action-gh-release@v2
         with:
@@ -118,3 +147,4 @@ jobs:
           files: |
             artifacts/android/${{ needs.version.outputs.app_name }}-android-${{ needs.version.outputs.tag }}.apk
             artifacts/ios/${{ needs.version.outputs.app_name }}-ios-${{ needs.version.outputs.tag }}.ipa
+            artifacts/web/**

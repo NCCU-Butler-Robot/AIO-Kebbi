@@ -43,6 +43,10 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   // null = idle, -1 = extracting, 0-100 = download %
   int? _voskDownloadProgress;
 
+  // Microphone permission state
+  bool _micPermissionGranted = false;
+  bool _isPermanentlyDenied = false;
+
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
 
@@ -56,6 +60,33 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
 
     // Pre-check if the model is already on disk (instant, no download UI)
     _checkVoskModelCached();
+    // Request microphone permission proactively
+    _checkMicPermission();
+  }
+
+  Future<void> _checkMicPermission() async {
+    final status = await Permission.microphone.status;
+    if (status.isGranted) {
+      setState(() {
+        _micPermissionGranted = true;
+        _isPermanentlyDenied = false;
+      });
+    } else if (status.isDenied) {
+      final result = await Permission.microphone.request();
+      setState(() {
+        _micPermissionGranted = result.isGranted;
+        _isPermanentlyDenied = false;
+      });
+    } else if (status.isPermanentlyDenied) {
+      setState(() {
+        _micPermissionGranted = false;
+        _isPermanentlyDenied = true;
+      });
+    }
+  }
+
+  Future<void> _openSettings() async {
+    await openAppSettings();
   }
 
   Future<void> _checkVoskModelCached() async {
@@ -189,13 +220,20 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
         final micStatus = await Permission.microphone.request();
         if (!micStatus.isGranted) {
           if (mounted) {
+            final isPermanentlyDenied = await Permission.microphone.isPermanentlyDenied;
             setState(() {
               _isBusy = false;
-              _liveTranscript = 'Microphone permission is required.';
+              _micPermissionGranted = false;
+              _isPermanentlyDenied = isPermanentlyDenied;
+              _liveTranscript = isPermanentlyDenied
+                  ? 'Microphone permission denied. Tap settings icon to open Settings.'
+                  : 'Microphone permission is required.';
             });
           }
           return;
         }
+        _micPermissionGranted = true;
+        _isPermanentlyDenied = false;
 
         await KebbiService.startVoskSTT();
       }
@@ -424,7 +462,14 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
 
                     // 麥克風
                     InkWell(
-                      onTap: (_isLoading || _isBusy) ? null : _toggleRecording,
+                      onTap: () async {
+                        if (_isLoading || _isBusy) return;
+                        if (_isPermanentlyDenied && !_micPermissionGranted) {
+                          _openSettings();
+                        } else {
+                          _toggleRecording();
+                        }
+                      },
                       borderRadius: BorderRadius.circular(28),
                       child: Container(
                         width: 56,
@@ -444,7 +489,13 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                                     color: Colors.white, strokeWidth: 2),
                               )
                             : Icon(
-                                _isRecording ? Icons.mic : Icons.mic_off,
+                                (_isPermanentlyDenied && !_micPermissionGranted) || _isRecording
+                                    ? (_isPermanentlyDenied && !_micPermissionGranted
+                                        ? Icons.settings
+                                        : Icons.mic)
+                                    : (_micPermissionGranted
+                                        ? Icons.mic
+                                        : Icons.mic_off),
                                 color: Colors.black,
                                 size: 26,
                               ),

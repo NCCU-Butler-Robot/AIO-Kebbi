@@ -48,6 +48,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>This app needs microphone access for call monitoring.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs camera access for food recognition and photo capture.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

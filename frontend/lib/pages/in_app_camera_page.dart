@@ -1,6 +1,6 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 /// Full-screen in-app camera.
 /// Returns an [XFile] when the user captures a photo, or null if cancelled.
@@ -30,6 +30,15 @@ class _InAppCameraPageState extends State<InAppCameraPage> {
       _initializing = true;
       _error = null;
     });
+
+    final cameraStatus = await Permission.camera.request();
+    if (!cameraStatus.isGranted) {
+      setState(() {
+        _initializing = false;
+        _error = 'Camera permission denied. Please enable in Settings.';
+      });
+      return;
+    }
 
     try {
       _cameras ??= await availableCameras();
