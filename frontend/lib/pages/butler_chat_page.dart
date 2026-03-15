@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../constants.dart';
 import '../di/service_locator.dart';
@@ -182,6 +183,18 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
             }
             return;
           }
+        }
+
+        // Request mic permission before Vosk opens AudioRecord
+        final micStatus = await Permission.microphone.request();
+        if (!micStatus.isGranted) {
+          if (mounted) {
+            setState(() {
+              _isBusy = false;
+              _liveTranscript = 'Microphone permission is required.';
+            });
+          }
+          return;
         }
 
         await KebbiService.startVoskSTT();

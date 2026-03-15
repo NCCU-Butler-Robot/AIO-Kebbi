@@ -35,6 +35,7 @@ class MainActivity : FlutterActivity() {
     // Vosk
     private var voskModel: Model? = null
     private var voskSpeechService: SpeechService? = null
+    @Volatile private var voskDownloading = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -229,11 +230,17 @@ class MainActivity : FlutterActivity() {
             return
         }
 
+        // Guard against concurrent downloads
+        if (voskDownloading) {
+            result.error("VOSK_BUSY", "Model is already downloading", null)
+            return
+        }
+        voskDownloading = true
+
         // Download → unzip → load
         Thread {
+            val zipFile = File(cacheDir, "$VOSK_MODEL_NAME.zip")
             try {
-                val zipFile = File(cacheDir, "$VOSK_MODEL_NAME.zip")
-
                 // ── Download ─────────────────────────────────────────
                 Log.d(TAG, "Downloading Vosk model from $VOSK_MODEL_URL")
                 val conn = URL(VOSK_MODEL_URL).openConnection() as HttpURLConnection
@@ -275,10 +282,13 @@ class MainActivity : FlutterActivity() {
                 // ── Load ──────────────────────────────────────────────
                 voskModel = Model(File(filesDir, VOSK_MODEL_NAME).absolutePath)
                 Log.d(TAG, "Vosk model loaded successfully")
+                voskDownloading = false
                 mainHandler.post { result.success(null) }
 
             } catch (e: Exception) {
                 Log.e(TAG, "initVosk failed", e)
+                zipFile.delete()
+                voskDownloading = false
                 mainHandler.post { result.error("VOSK_INIT_FAIL", e.message, null) }
             }
         }.start()
@@ -344,7 +354,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun stopVoskSTT() {
-        voskSpeechService?.stop()
+        voskSpeechService?.apply { stop(); shutdown() }
         voskSpeechService = null
         Log.d(TAG, "Vosk STT stopped")
     }
