@@ -23,9 +23,9 @@ class MainActivity : FlutterActivity() {
         private const val CHANNEL = "kebbi"
         private const val TAG = "[KebbiMain]"
         private const val ACTION_RAISE_RIGHT_ARM = "666_BA_RArmS90"
-        private const val VOSK_MODEL_NAME = "vosk-model-small-cn-0.22"
+        private const val VOSK_MODEL_NAME = "vosk-model-small-en-us-0.15"
         private const val VOSK_MODEL_URL =
-            "https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip"
+            "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
     }
 
     private var robotApi: Any? = null
