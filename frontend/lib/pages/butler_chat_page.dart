@@ -2,13 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:speech_to_text/speech_to_text.dart';
 
 import '../constants.dart';
 import '../di/service_locator.dart';
 import '../services/api_service.dart';
 import '../services/audio_service.dart';
+import '../services/kebbi_service.dart';
 
 class ButlerChatPage extends StatefulWidget {
   const ButlerChatPage({super.key});
@@ -29,13 +28,10 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   String? _conversationId;
   bool _isLoading = false;
   bool _isRecording = false;
+  bool _isBusy = false;
   String _liveTranscript = 'Tap mic to start recording...';
 
-  // Speech-to-text
-  final SpeechToText _speech = SpeechToText();
-  bool _speechAvailable = false;
-  bool _isBusy = false; // true while permission request or STT init is running
-  // true → auto-send when silence detected; false → manual stop, just fill text field
+  // true → auto-send on final result; false → manual stop, fill text only
   bool _autoSendOnResult = false;
 
   final TextEditingController _textController = TextEditingController();
@@ -45,56 +41,94 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   void initState() {
     super.initState();
     AudioService.I.init();
-    // Do NOT call initialize() here — calling it without RECORD_AUDIO
-    // permission leaves the SpeechToText instance in a broken state on
-    // Android, making the second (post-permission) initialize() silently
-    // fail. We initialize lazily on first mic tap instead.
-  }
 
-  /// Request mic permission then initialize STT (called once on first tap).
-  Future<bool> _ensureSpeechReady() async {
-    // Already initialized successfully — nothing to do.
-    if (_speechAvailable) return true;
-
-    final micStatus = await Permission.microphone.request();
-    if (micStatus != PermissionStatus.granted) {
-      if (mounted) setState(() => _liveTranscript = 'Microphone permission denied.');
-      return false;
-    }
-
-    _speechAvailable = await _speech.initialize(
-      onStatus: (status) {
-        // 'notListening' fires briefly mid-session on Android — only
-        // 'done' / 'doneNoResult' means the session truly ended.
-        if ((status == 'done' || status == 'doneNoResult') && mounted) {
-          setState(() => _isRecording = false);
-        }
-      },
-      onError: (error) {
-        if (mounted) {
-          setState(() {
-            _isRecording = false;
-            _autoSendOnResult = false;
-            _liveTranscript = 'Voice error: ${error.errorMsg}';
-          });
-        }
-      },
-    );
-
-    if (!_speechAvailable) {
-      if (mounted) setState(() => _liveTranscript = 'Speech recognition not available on this device.');
-      return false;
-    }
-    return true;
+    // Wire up Kebbi STT callback handler
+    KebbiService.setupCallbackHandler();
+    KebbiService.setSTTCallback(_onSTTResult);
   }
 
   @override
   void dispose() {
-    _speech.cancel();
+    KebbiService.setSTTCallback(null);
+    KebbiService.stopSTT();
     _textController.dispose();
     _scrollCtrl.dispose();
     super.dispose();
   }
+
+  // ── STT callback from NuwaRobotAPI ─────────────────────────────────────────
+
+  void _onSTTResult(String text, bool isFinal) {
+    if (!mounted) return;
+
+    if (isFinal) {
+      setState(() {
+        _isRecording = false;
+        _liveTranscript = text.isNotEmpty ? text : 'No speech detected.';
+        if (text.isNotEmpty) _textController.text = text;
+      });
+
+      if (_autoSendOnResult && text.isNotEmpty) {
+        _autoSendOnResult = false;
+        _sendText();
+      } else {
+        _autoSendOnResult = false;
+      }
+    } else {
+      // Partial result — show live transcript
+      setState(() {
+        _liveTranscript = text.isNotEmpty ? text : 'Listening…';
+      });
+    }
+  }
+
+  // ── Recording toggle ────────────────────────────────────────────────────────
+
+  Future<void> _toggleRecording() async {
+    if (_isLoading || _isBusy) return;
+
+    if (_isRecording) {
+      // Manual stop → fill text field, DON'T auto-send
+      _autoSendOnResult = false;
+      await KebbiService.stopSTT();
+      setState(() {
+        _isRecording = false;
+        _liveTranscript = _textController.text.isNotEmpty
+            ? _textController.text
+            : 'Tap mic to start recording...';
+      });
+      return;
+    }
+
+    setState(() {
+      _isBusy = true;
+      _liveTranscript = 'Starting microphone…';
+    });
+
+    try {
+      await KebbiService.startSTT();
+
+      if (!mounted) return;
+      setState(() {
+        _isBusy = false;
+        _isRecording = true;
+        _liveTranscript = 'Listening…';
+        _textController.clear();
+      });
+      _autoSendOnResult = true;
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isBusy = false;
+          _isRecording = false;
+          _autoSendOnResult = false;
+          _liveTranscript = 'Mic error: $e';
+        });
+      }
+    }
+  }
+
+  // ── Send text to Butler API ─────────────────────────────────────────────────
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -106,100 +140,6 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
         );
       }
     });
-  }
-
-  Future<void> _toggleRecording() async {
-    if (_isLoading || _isBusy) return;
-
-    if (_isRecording) {
-      // Manual stop → fill text field but DON'T auto-send
-      _autoSendOnResult = false;
-      await _speech.stop();
-      setState(() {
-        _isRecording = false;
-        _liveTranscript = _textController.text.isNotEmpty
-            ? _textController.text
-            : 'Tap mic to start recording...';
-      });
-      return;
-    }
-
-    // Show busy state immediately so user gets visual feedback
-    setState(() {
-      _isBusy = true;
-      _liveTranscript = 'Initializing microphone…';
-    });
-
-    try {
-      // Request permission and (re-)initialize lazily on first tap
-      final ready = await _ensureSpeechReady();
-      if (!ready) {
-        if (mounted) setState(() => _isBusy = false);
-        return;
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _isBusy = false;
-        _isRecording = true;
-        _liveTranscript = 'Listening…';
-        _textController.clear();
-      });
-
-      _autoSendOnResult = true;
-
-      final started = await _speech.listen(
-        onResult: (result) {
-          if (!mounted) return;
-
-          if (result.finalResult) {
-            final words = result.recognizedWords;
-            setState(() {
-              _isRecording = false;
-              _liveTranscript =
-                  words.isNotEmpty ? words : 'No speech detected.';
-              if (words.isNotEmpty) _textController.text = words;
-            });
-
-            // Auto-send only when silence detection triggered (not manual stop)
-            if (_autoSendOnResult && words.isNotEmpty) {
-              _autoSendOnResult = false;
-              _sendText();
-            } else {
-              _autoSendOnResult = false;
-            }
-          } else {
-            // Live partial transcript while speaking
-            setState(() {
-              _liveTranscript = result.recognizedWords.isNotEmpty
-                  ? result.recognizedWords
-                  : 'Listening…';
-            });
-          }
-        },
-        pauseFor: const Duration(seconds: 2),
-        listenFor: const Duration(seconds: 30),
-        listenOptions: SpeechListenOptions(partialResults: true),
-      );
-
-      // listen() returns false if it couldn't start
-      if (!started && mounted) {
-        setState(() {
-          _isRecording = false;
-          _autoSendOnResult = false;
-          _liveTranscript = 'Could not start recording. Please try again.';
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isBusy = false;
-          _isRecording = false;
-          _autoSendOnResult = false;
-          _liveTranscript = 'Mic error: $e';
-        });
-      }
-    }
   }
 
   Future<void> _sendText() async {
@@ -258,6 +198,8 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     final mm = t.minute.toString().padLeft(2, '0');
     return '$hh:$mm';
   }
+
+  // ── UI ──────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -413,7 +355,6 @@ class _ChatMessage {
   final _Speaker from;
   final String text;
   final String time;
-
   _ChatMessage({required this.from, required this.text, required this.time});
 }
 
