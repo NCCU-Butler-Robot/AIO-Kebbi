@@ -31,9 +31,9 @@ dependencies:
   vosk_flutter: ^0.3.0
 
 dependency_overrides:
-  # vosk_flutter requires permission_handler ^10.2.0 but we use ^12.0.1
-  # Override to allow the newer version (API is backward compatible)
+  # vosk_flutter pins older versions; override to match app requirements
   permission_handler: ^12.0.1
+  http: ^1.0.0
 
 dev_dependencies:
   flutter_test:
