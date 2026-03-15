@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 typedef STTResultCallback = void Function(String text, bool isFinal);
+typedef VoskProgressCallback = void Function(int percent);
 
 class KebbiService {
   static const MethodChannel _ch = MethodChannel('kebbi');
@@ -12,7 +13,31 @@ class KebbiService {
   // STT result callback — set by ButlerChatPage
   static STTResultCallback? _sttCallback;
 
-  /// Returns true if NuwaRobotAPI class is present (i.e. running on Kebbi).
+  // Vosk download progress callback — set by ButlerChatPage
+  static VoskProgressCallback? _voskProgressCallback;
+
+  /// Wire up incoming method calls from native.
+  /// Must be called once before using STT or Vosk.
+  static void setupCallbackHandler() {
+    _ch.setMethodCallHandler((call) async {
+      if (call.method == 'onSTTResult') {
+        final text = (call.arguments as Map)['text'] as String? ?? '';
+        final isFinal = (call.arguments as Map)['isFinal'] as bool? ?? true;
+        _sttCallback?.call(text, isFinal);
+      } else if (call.method == 'onVoskProgress') {
+        final percent = call.arguments as int? ?? 0;
+        _voskProgressCallback?.call(percent);
+      }
+    });
+  }
+
+  static void setSTTCallback(STTResultCallback? cb) => _sttCallback = cb;
+  static void setVoskProgressCallback(VoskProgressCallback? cb) =>
+      _voskProgressCallback = cb;
+
+  // ── Kebbi detection ────────────────────────────────────────────────────────
+
+  /// Returns true if NuwaRobotAPI can be instantiated (i.e. running on Kebbi).
   static Future<bool> isKebbiAvailable() async {
     if (!_isAndroidNative) return false;
     try {
@@ -23,21 +48,7 @@ class KebbiService {
     }
   }
 
-  /// Call once at app start (or before using STT) to wire up the incoming
-  /// method handler that receives onSTTResult events from native.
-  static void setupCallbackHandler() {
-    _ch.setMethodCallHandler((call) async {
-      if (call.method == 'onSTTResult') {
-        final text = (call.arguments as Map)['text'] as String? ?? '';
-        final isFinal = (call.arguments as Map)['isFinal'] as bool? ?? true;
-        _sttCallback?.call(text, isFinal);
-      }
-    });
-  }
-
-  static void setSTTCallback(STTResultCallback? cb) {
-    _sttCallback = cb;
-  }
+  // ── Kebbi NuwaSDK STT ──────────────────────────────────────────────────────
 
   static Future<void> init() async {
     if (!_isAndroidNative) {
@@ -85,6 +96,60 @@ class KebbiService {
       debugPrint('[Kebbi] stopSTT error: $e');
     }
   }
+
+  // ── Vosk offline STT ───────────────────────────────────────────────────────
+
+  /// Returns true if the Vosk model has already been downloaded.
+  static Future<bool> isVoskModelReady() async {
+    if (!_isAndroidNative) return false;
+    try {
+      final result = await _ch.invokeMethod<bool>('checkVoskModel');
+      return result ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Download (if needed) + load the Vosk model.
+  /// Progress is reported via [setVoskProgressCallback]:
+  ///   0–100 = download %, -1 = extracting.
+  /// Throws on failure.
+  static Future<void> initVosk() async {
+    if (!_isAndroidNative) return;
+    try {
+      await _ch.invokeMethod<void>('initVosk');
+    } on PlatformException catch (e) {
+      debugPrint('[Kebbi] initVosk error: ${e.code} ${e.message}');
+      rethrow;
+    } catch (e) {
+      debugPrint('[Kebbi] initVosk error: $e');
+      rethrow;
+    }
+  }
+
+  static Future<void> startVoskSTT() async {
+    if (!_isAndroidNative) return;
+    try {
+      await _ch.invokeMethod<void>('startVoskSTT');
+    } on PlatformException catch (e) {
+      debugPrint('[Kebbi] startVoskSTT error: ${e.code} ${e.message}');
+      rethrow;
+    } catch (e) {
+      debugPrint('[Kebbi] startVoskSTT error: $e');
+      rethrow;
+    }
+  }
+
+  static Future<void> stopVoskSTT() async {
+    if (!_isAndroidNative) return;
+    try {
+      await _ch.invokeMethod<void>('stopVoskSTT');
+    } catch (e) {
+      debugPrint('[Kebbi] stopVoskSTT error: $e');
+    }
+  }
+
+  // ── Robot actions ──────────────────────────────────────────────────────────
 
   static Future<void> doFraudAction() async {
     if (!_isAndroidNative) return;

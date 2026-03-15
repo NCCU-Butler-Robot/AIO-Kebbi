@@ -92,5 +92,6 @@ repositories {
 
 dependencies {
     implementation(files("libs/NuwaSDK.aar"))
+    implementation("com.alphacephei:vosk-android:0.3.47")
     // 其餘依賴由 Flutter 插件自動處理
 }

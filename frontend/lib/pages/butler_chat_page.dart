@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:speech_to_text/speech_to_text.dart';
 
 import '../constants.dart';
 import '../di/service_locator.dart';
@@ -35,12 +34,13 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   // true → auto-send on final result; false → manual stop, fill text only
   bool _autoSendOnResult = false;
 
-  // STT backend: null = not yet detected, true = Kebbi, false = speech_to_text
+  // STT backend: null = not yet detected, true = Kebbi NuwaSDK, false = Vosk
   bool? _useKebbi;
 
-  // speech_to_text fallback (non-Kebbi devices)
-  final SpeechToText _speech = SpeechToText();
-  bool _speechAvailable = false;
+  // Vosk model state
+  bool _voskModelReady = false;
+  // null = idle, -1 = extracting, 0-100 = download %
+  int? _voskDownloadProgress;
 
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
@@ -49,26 +49,34 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   void initState() {
     super.initState();
     AudioService.I.init();
-
-    // Wire up Kebbi STT callback handler
     KebbiService.setupCallbackHandler();
     KebbiService.setSTTCallback(_onSTTResult);
+    KebbiService.setVoskProgressCallback(_onVoskProgress);
+
+    // Pre-check if the model is already on disk (instant, no download UI)
+    _checkVoskModelCached();
+  }
+
+  Future<void> _checkVoskModelCached() async {
+    final ready = await KebbiService.isVoskModelReady();
+    if (mounted && ready) setState(() => _voskModelReady = true);
   }
 
   @override
   void dispose() {
     KebbiService.setSTTCallback(null);
+    KebbiService.setVoskProgressCallback(null);
     if (_useKebbi == true) {
       KebbiService.stopSTT();
     } else if (_useKebbi == false) {
-      _speech.cancel();
+      KebbiService.stopVoskSTT();
     }
     _textController.dispose();
     _scrollCtrl.dispose();
     super.dispose();
   }
 
-  // ── STT callback from NuwaRobotAPI ─────────────────────────────────────────
+  // ── Callbacks ────────────────────────────────────────────────────────────
 
   void _onSTTResult(String text, bool isFinal) {
     if (!mounted) return;
@@ -87,25 +95,34 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
         _autoSendOnResult = false;
       }
     } else {
-      // Partial result — show live transcript
       setState(() {
         _liveTranscript = text.isNotEmpty ? text : 'Listening…';
       });
     }
   }
 
-  // ── Recording toggle ────────────────────────────────────────────────────────
+  void _onVoskProgress(int percent) {
+    if (!mounted) return;
+    setState(() {
+      _voskDownloadProgress = percent;
+      _liveTranscript = percent == -1
+          ? 'Extracting model…'
+          : 'Downloading voice model… $percent%';
+    });
+  }
+
+  // ── Recording toggle ──────────────────────────────────────────────────────
 
   Future<void> _toggleRecording() async {
     if (_isLoading || _isBusy) return;
 
     if (_isRecording) {
-      // Manual stop → fill text field, DON'T auto-send
+      // Manual stop → fill text field, don't auto-send
       _autoSendOnResult = false;
       if (_useKebbi == true) {
         await KebbiService.stopSTT();
       } else {
-        await _speech.stop();
+        await KebbiService.stopVoskSTT();
       }
       setState(() {
         _isRecording = false;
@@ -122,16 +139,16 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     });
 
     try {
-      // Detect STT backend once
+      // ── Detect backend once ──────────────────────────────────────────────
       _useKebbi ??= await KebbiService.isKebbiAvailable();
 
       if (_useKebbi!) {
-        // ── Kebbi robot: NuwaSDK STT ─────────────────────
+        // ── Kebbi robot: NuwaSDK STT ────────────────────────────────────
         try {
           await KebbiService.startSTT();
         } catch (e) {
-          // NuwaSDK failed — speech_to_text won't work on Kebbi either,
-          // so surface the real error instead of falling through.
+          // NuwaSDK failed — Kebbi might not have Google Speech either,
+          // so surface the real error instead of falling through to Vosk.
           if (mounted) {
             setState(() {
               _isBusy = false;
@@ -140,45 +157,34 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
           }
           return;
         }
-      }
+      } else {
+        // ── Non-Kebbi device: Vosk offline STT ─────────────────────────
+        if (!_voskModelReady) {
+          // Download + extract + load model (shows progress via callback)
+          setState(() {
+            _voskDownloadProgress = 0;
+            _liveTranscript = 'Preparing voice model…';
+          });
 
-      if (!_useKebbi!) {
-        // ── Regular Android phone: speech_to_text ────────
-        if (!_speechAvailable) {
-          _speechAvailable = await _speech.initialize(
-            onStatus: (status) {
-              if ((status == 'done' || status == 'doneNoResult') && mounted) {
-                setState(() => _isRecording = false);
-              }
-            },
-            onError: (error) {
-              if (mounted) {
-                setState(() {
-                  _isBusy = false;
-                  _isRecording = false;
-                  _autoSendOnResult = false;
-                  _liveTranscript = error.errorMsg == 'recognizerNotAvailable'
-                      ? 'Voice input not available on this device.'
-                      : 'Voice error: ${error.errorMsg}';
-                });
-              }
-            },
-          );
+          try {
+            await KebbiService.initVosk();
+            setState(() {
+              _voskModelReady = true;
+              _voskDownloadProgress = null;
+            });
+          } catch (e) {
+            if (mounted) {
+              setState(() {
+                _isBusy = false;
+                _voskDownloadProgress = null;
+                _liveTranscript = 'Model download failed: $e';
+              });
+            }
+            return;
+          }
         }
-        if (!_speechAvailable) {
-          if (mounted) setState(() => _liveTranscript = 'Speech recognition not available.');
-          if (mounted) setState(() => _isBusy = false);
-          return;
-        }
-        await _speech.listen(
-          onResult: (result) => _onSTTResult(
-            result.recognizedWords,
-            result.finalResult,
-          ),
-          pauseFor: const Duration(seconds: 2),
-          listenFor: const Duration(seconds: 30),
-          listenOptions: SpeechListenOptions(partialResults: true),
-        );
+
+        await KebbiService.startVoskSTT();
       }
 
       if (!mounted) return;
@@ -191,20 +197,17 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
       _autoSendOnResult = true;
     } catch (e) {
       if (mounted) {
-        final msg = e.toString().contains('recognizerNotAvailable')
-            ? 'Voice input not available on this device.'
-            : 'Mic error: $e';
         setState(() {
           _isBusy = false;
           _isRecording = false;
           _autoSendOnResult = false;
-          _liveTranscript = msg;
+          _liveTranscript = 'Mic error: $e';
         });
       }
     }
   }
 
-  // ── Send text to Butler API ─────────────────────────────────────────────────
+  // ── Send text to Butler API ───────────────────────────────────────────────
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -275,7 +278,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     return '$hh:$mm';
   }
 
-  // ── UI ──────────────────────────────────────────────────────────────────────
+  // ── UI ────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -325,6 +328,26 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                     const SizedBox(height: 8),
                     FakeSiriWave(active: _isRecording),
                     const SizedBox(height: 10),
+
+                    // Download progress bar (Vosk model)
+                    if (_voskDownloadProgress != null &&
+                        _voskDownloadProgress! >= 0) ...[
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: _voskDownloadProgress! / 100,
+                            minHeight: 6,
+                            backgroundColor: Colors.white24,
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                                Color(0xff29d97a)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                    ],
+
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Text(
