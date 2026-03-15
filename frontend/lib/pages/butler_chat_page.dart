@@ -2,13 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 
 import '../constants.dart';
 import '../di/service_locator.dart';
 import '../services/api_service.dart';
 import '../services/audio_service.dart';
 import '../services/kebbi_service.dart';
-import '../services/vosk_stt_service.dart';
 
 class ButlerChatPage extends StatefulWidget {
   const ButlerChatPage({super.key});
@@ -35,8 +35,12 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   // true → auto-send on final result; false → manual stop, fill text only
   bool _autoSendOnResult = false;
 
-  // STT backend: null = not yet detected, true = Kebbi, false = Vosk
+  // STT backend: null = not yet detected, true = Kebbi, false = speech_to_text
   bool? _useKebbi;
+
+  // speech_to_text fallback (non-Kebbi devices)
+  final SpeechToText _speech = SpeechToText();
+  bool _speechAvailable = false;
 
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
@@ -57,7 +61,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     if (_useKebbi == true) {
       KebbiService.stopSTT();
     } else if (_useKebbi == false) {
-      VoskSttService.stop();
+      _speech.cancel();
     }
     _textController.dispose();
     _scrollCtrl.dispose();
@@ -101,7 +105,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
       if (_useKebbi == true) {
         await KebbiService.stopSTT();
       } else {
-        await VoskSttService.stop();
+        await _speech.stop();
       }
       setState(() {
         _isRecording = false;
@@ -122,18 +126,42 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
       _useKebbi ??= await KebbiService.isKebbiAvailable();
 
       if (_useKebbi!) {
-        // ── Kebbi robot ─────────────────────────────────
+        // ── Kebbi robot: NuwaSDK STT ─────────────────────
         await KebbiService.startSTT();
       } else {
-        // ── Regular Android phone: Vosk ──────────────────
-        if (!VoskSttService.isInitialized) {
-          await VoskSttService.prepare(
-            onProgress: (s) {
-              if (mounted) setState(() => _liveTranscript = s);
+        // ── Regular Android phone: speech_to_text ────────
+        if (!_speechAvailable) {
+          _speechAvailable = await _speech.initialize(
+            onStatus: (status) {
+              if ((status == 'done' || status == 'doneNoResult') && mounted) {
+                setState(() => _isRecording = false);
+              }
+            },
+            onError: (error) {
+              if (mounted) {
+                setState(() {
+                  _isRecording = false;
+                  _autoSendOnResult = false;
+                  _liveTranscript = 'Voice error: ${error.errorMsg}';
+                });
+              }
             },
           );
         }
-        await VoskSttService.start(_onSTTResult);
+        if (!_speechAvailable) {
+          if (mounted) setState(() => _liveTranscript = 'Speech recognition not available.');
+          if (mounted) setState(() => _isBusy = false);
+          return;
+        }
+        await _speech.listen(
+          onResult: (result) => _onSTTResult(
+            result.recognizedWords,
+            result.finalResult,
+          ),
+          pauseFor: const Duration(seconds: 2),
+          listenFor: const Duration(seconds: 30),
+          listenOptions: SpeechListenOptions(partialResults: true),
+        );
       }
 
       if (!mounted) return;
