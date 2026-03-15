@@ -127,8 +127,15 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
 
       if (_useKebbi!) {
         // ── Kebbi robot: NuwaSDK STT ─────────────────────
-        await KebbiService.startSTT();
-      } else {
+        try {
+          await KebbiService.startSTT();
+        } catch (_) {
+          // Nuwa service unavailable at runtime — fall back to speech_to_text
+          _useKebbi = false;
+        }
+      }
+
+      if (!_useKebbi!) {
         // ── Regular Android phone: speech_to_text ────────
         if (!_speechAvailable) {
           _speechAvailable = await _speech.initialize(

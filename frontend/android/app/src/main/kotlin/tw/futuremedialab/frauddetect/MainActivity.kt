@@ -51,11 +51,10 @@ class MainActivity : FlutterActivity() {
                 }
 
                 "checkKebbi" -> {
-                    val available = try {
-                        Class.forName("com.nuwarobotics.service.agent.NuwaRobotAPI")
-                        true
-                    } catch (_: Throwable) { false }
-                    result.success(available)
+                    // Class existing is not enough — try to instantiate to
+                    // confirm Nuwa robot service is actually running.
+                    ensureRobotApi()
+                    result.success(robotApi != null)
                 }
 
                 "startSTT" -> {
