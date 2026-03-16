@@ -1,22 +1,28 @@
 import asyncio
-from typing import List, Dict
+from typing import Dict, List
 
-from ..llm_pipeline import LLMPipeline, SYSTEM_PROMPT
 from ..db_manager.database import (
-    create_conversation as db_create_conversation, # Alias to avoid name conflict
-    add_message as db_add_message, # Alias to avoid name conflict
+    add_message as db_add_message,  # Alias to avoid name conflict
 )
+from ..db_manager.database import (
+    create_conversation as db_create_conversation,  # Alias to avoid name conflict
+)
+from ..llm_pipeline import SYSTEM_PROMPT, LLMPipeline
 
 
 async def handle_chat_message(
-    user_id: str, prompt: str, llm_pipeline: LLMPipeline, generate_lock: asyncio.Lock, conversation: dict | None = None
+    user_id: str,
+    prompt: str,
+    llm_pipeline: LLMPipeline,
+    generate_lock: asyncio.Lock,
+    conversation: dict | None = None,
 ) -> Dict[str, str]:
     conversation_id: str
     messages_history: List[Dict[str, str]]
 
     if conversation:
-        conversation_id = conversation['conversation_id']
-        messages_history = conversation['messages']
+        conversation_id = conversation["conversation_id"]
+        messages_history = conversation["messages"]
 
     else:
         conversation_id = await db_create_conversation(user_id)
@@ -26,9 +32,13 @@ async def handle_chat_message(
     await db_add_message(conversation_id, "user", prompt)
 
     async with generate_lock:
-        assistant_response = await asyncio.to_thread(llm_pipeline.generate, messages_history)
+        assistant_response = await asyncio.to_thread(
+            llm_pipeline.generate, messages_history
+        )
 
-    assistant_message_id = await db_add_message(conversation_id, "assistant", assistant_response)
+    assistant_message_id = await db_add_message(
+        conversation_id, "assistant", assistant_response
+    )
 
     return {
         "response": assistant_response,

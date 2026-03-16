@@ -1,14 +1,12 @@
-import os
 # import asyncpg
-import redis.asyncio as redis
-from typing import Dict, Optional
-import uuid
 
+import redis.asyncio as redis
 
 # Database connection pool
 # pool: asyncpg.Pool | None = None
 # Redis client instance
 redis_client: redis.Redis | None = None
+
 
 async def connect_to_db():
     global redis_client
@@ -30,11 +28,13 @@ async def connect_to_db():
         print(f"[ERROR] Failed to create database connection pool: {e}")
         raise
 
+
 # async def close_db_connection():
 #     global pool
 #     if pool:
 #         await pool.close()
 #         print("[INFO] Database connection pool closed.")
+
 
 async def close_redis_connection():
     global redis_client

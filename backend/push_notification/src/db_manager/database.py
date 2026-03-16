@@ -1,13 +1,14 @@
 import os
-from typing import Dict, List, Optional
-import redis.asyncio as redis
+from typing import Dict, List
 
 import asyncpg
+import redis.asyncio as redis
 
 # Database connection pool
 pool: asyncpg.Pool | None = None
 # Redis client instance
 redis_client: redis.Redis | None = None
+
 
 async def connect_to_db():
     global pool, redis_client
@@ -18,7 +19,7 @@ async def connect_to_db():
             port=os.getenv("DB_PORT", "5432"),
             user=os.getenv("DB_USERNAME", "kebbi"),
             password=os.getenv("DB_PASSWORD", "kebbi"),
-            database=os.getenv("DB_DATABASE_NAME", "kebbi")
+            database=os.getenv("DB_DATABASE_NAME", "kebbi"),
         )
         print("[INFO] Database connection pool created successfully.")
 
@@ -35,6 +36,7 @@ async def close_db_connection():
     if pool:
         await pool.close()
         print("[INFO] Database connection pool closed.")
+
 
 async def close_redis_connection():
     global redis_client

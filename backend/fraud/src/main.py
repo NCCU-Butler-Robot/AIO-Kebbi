@@ -8,6 +8,7 @@ from typing import Optional
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -162,10 +163,10 @@ async def call_fraud_detection_api(conversation_text: str) -> bool | None:
 
                 if response_text.lower() == "true":
                     prediction = True
-                    print(f"[INFO] Fraud detection result: True (possible scam)")
+                    print("[INFO] Fraud detection result: True (possible scam)")
                 elif response_text.lower() == "false":
                     prediction = False
-                    print(f"[INFO] Fraud detection result: False (normal conversation)")
+                    print("[INFO] Fraud detection result: False (normal conversation)")
                 else:
                     # 如果返回其他內容，嘗試解析JSON
                     try:
@@ -268,6 +269,14 @@ app = FastAPI(
     description="A GPT-powered service designed to engage with scammers and extract information about their schemes",
     version="1.0.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -444,7 +453,7 @@ async def fraud_chat_message(
             # False比較多，表示不太可能是詐騙，需要真人接電話
             if false_count > true_count:
                 print(
-                    f"[INFO] Fraud detection indicates normal conversation. Notifying real user to take over."
+                    "[INFO] Fraud detection indicates normal conversation. Notifying real user to take over."
                 )
                 call_token = await database.set_call_token(
                     x_user_id, target_id, expiration_seconds=300
@@ -468,13 +477,13 @@ async def fraud_chat_message(
             else:
                 # True比較多或相等，繼續對話
                 print(
-                    f"[INFO] Fraud detection indicates potential scam. Continuing AI conversation."
+                    "[INFO] Fraud detection indicates potential scam. Continuing AI conversation."
                 )
                 # 繼續處理，返回正常的音頻響應
         else:
             # 如果沒有檢測結果，預設觸發通知（安全起見）
             print(
-                f"[WARNING] No detection results available. Notifying real user as precaution."
+                "[WARNING] No detection results available. Notifying real user as precaution."
             )
             call_token = await database.set_call_token(
                 x_user_id, target_id, expiration_seconds=300

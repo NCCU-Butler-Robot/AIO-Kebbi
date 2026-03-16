@@ -1,6 +1,6 @@
 import os
 from typing import Dict, List
-import asyncio
+
 from openai import AsyncOpenAI
 
 # ========== GPT設定 ==========
@@ -43,30 +43,32 @@ class GPTPipeline:
     def __init__(self, api_key: str | None = None, model: str = DEFAULT_MODEL):
         """
         初始化GPT管道
-        
+
         Args:
             api_key: OpenAI API密鑰，如果不提供則從環境變數OPENAI_API_KEY讀取
             model: GPT模型名稱
         """
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
-            raise ValueError("OpenAI API key is required. Set OPENAI_API_KEY environment variable or provide api_key parameter.")
-        
+            raise ValueError(
+                "OpenAI API key is required. Set OPENAI_API_KEY environment variable or provide api_key parameter."
+            )
+
         self.client = AsyncOpenAI(api_key=self.api_key)
         self.model = model
-        
+
     async def generate(self, messages: List[Dict[str, str]]) -> str:
         """
         生成回應
-        
+
         Args:
             messages: 對話歷史，格式為[{"role": "system/user/assistant", "content": "..."}]
-            
+
         Returns:
             str: 助理的回應
         """
         print(f"[DEBUG] GPT Conversation history: {messages}")
-        
+
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -75,30 +77,38 @@ class GPTPipeline:
                 temperature=TEMPERATURE,
                 top_p=TOP_P,
                 frequency_penalty=0.2,  # 避免重複
-                presence_penalty=0.1    # 鼓勵新內容
+                presence_penalty=0.1,  # 鼓勵新內容
             )
-            
+
             assistant_text = response.choices[0].message.content.strip()
             print(f"[INFO] GPT Assistant: {assistant_text}")
-            
+
             return assistant_text
-            
+
         except Exception as e:
             print(f"[ERROR] GPT generation failed: {e}")
             # 提供備用回應
-            fallback_response = "不好意思，您剛剛說什麼？我沒有聽得很清楚，可以再說一次嗎？"
+            fallback_response = (
+                "不好意思，您剛剛說什麼？我沒有聽得很清楚，可以再說一次嗎？"
+            )
             return fallback_response
-    
-    async def generate_with_role(self, user_input: str, target_name: str, target_phone: str, conversation_context: List[Dict[str, str]] = None) -> str:
+
+    async def generate_with_role(
+        self,
+        user_input: str,
+        target_name: str,
+        target_phone: str,
+        conversation_context: List[Dict[str, str]] = None,
+    ) -> str:
         """
         基於目標用戶角色生成回應
-        
+
         Args:
             user_input: 詐騙犯的輸入
             target_name: 目標受話者的姓名
             target_phone: 目標受話者的手機號碼
             conversation_context: 現有對話上下文
-            
+
         Returns:
             str: 助理的回應（扮演目標用戶）
         """
@@ -124,12 +134,12 @@ Speech characteristics for {target_name}:
 Remember: You are {target_name} answering your phone at {target_phone}. Stay in character and be naturally suspicious of unsolicited calls."""
 
         messages = [{"role": "system", "content": role_specific_prompt}]
-        
+
         if conversation_context:
             messages.extend(conversation_context)
-            
+
         # messages.append({"role": "user", "content": user_input})
-        
+
         return await self.generate(messages)
 
 

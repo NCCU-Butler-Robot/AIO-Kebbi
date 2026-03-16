@@ -1,11 +1,10 @@
 import asyncio
 import urllib.parse
 from contextlib import asynccontextmanager
-from io import BytesIO
 from typing import Optional
 
 from fastapi import FastAPI, File, Header, HTTPException, Query, Response, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # Import the database module itself to access its global variables correctly.
@@ -86,6 +85,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.post("/api/chat/")
 async def chat_message(
@@ -112,8 +119,12 @@ async def chat_message(
 
     # NOTE: Assumes handle_chat_message is updated to return a dictionary
     # e.g., {'response': '...', 'message_id': '...'}
-    conversation = await get_user_latest_conversation(x_user_id) if not message.initiate_conversation else None
-    
+    conversation = (
+        await get_user_latest_conversation(x_user_id)
+        if not message.initiate_conversation
+        else None
+    )
+
     response_data = await handle_chat_message(
         user_id=x_user_id,
         prompt=message.prompt,
@@ -133,7 +144,6 @@ async def chat_message(
             "recipient_user_id": x_user_id,
             "source_installation_id": x_installation_id,
         }
-
 
     # Generate audio from text using TTS service
     try:

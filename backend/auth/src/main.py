@@ -6,6 +6,7 @@ from typing import Optional
 
 import asyncpg
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
@@ -109,6 +110,14 @@ class TokenData(BaseModel):
 # --- Main Application Instance ---
 app = FastAPI(lifespan=lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # --- Utility Functions ---
 def verify_password(plain_password, hashed_password):
@@ -161,6 +170,7 @@ async def get_user_from_db(
     )
     return UserInDB(**row) if row else None
 
+
 async def get_user_by_uuid_from_db(
     conn: asyncpg.Connection, user_uuid: uuid.UUID
 ) -> Optional[UserInDB]:
@@ -204,7 +214,7 @@ async def get_current_user(
         if user_uuid_str is None:
             raise credentials_exception
         user_uuid = uuid.UUID(user_uuid_str)
-    except (JWTError, ValueError): # ValueError for invalid UUID string
+    except (JWTError, ValueError):  # ValueError for invalid UUID string
         raise credentials_exception
 
     user = await get_user_by_uuid_from_db(conn, user_uuid)
@@ -361,13 +371,9 @@ async def validate_token_for_nginx(
         )
 
     return JSONResponse(
-        content={"status": "ok"},
-        headers={
-            "X-User-ID": user_id,
-            "X-Username": username
-        }
+        content={"status": "ok"}, 
+        headers={"X-User-ID": user_id, "X-Username": username}
     )
-
 
 
 @app.post("/auth/register", response_model=User)

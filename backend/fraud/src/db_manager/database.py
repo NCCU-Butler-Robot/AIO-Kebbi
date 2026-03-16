@@ -1,19 +1,17 @@
-import os
 import json
+import os
 import secrets
-import time
+import uuid
+from typing import Dict, Optional
+
 import asyncpg
 import redis.asyncio as redis
-from typing import Dict, Optional
-import uuid
-
-from ..llm_pipeline.pipeline import SYSTEM_PROMPT # Fixed import
-
 
 # Database connection pool
 pool: asyncpg.Pool | None = None
 # Redis client instance
 redis_client: redis.Redis | None = None
+
 
 async def connect_to_db():
     global pool, redis_client
@@ -24,7 +22,7 @@ async def connect_to_db():
             port=os.getenv("DB_PORT", "5432"),
             user=os.getenv("DB_USERNAME", "kebbi"),
             password=os.getenv("DB_PASSWORD", "kebbi"),
-            database=os.getenv("DB_DATABASE_NAME", "kebbi")
+            database=os.getenv("DB_DATABASE_NAME", "kebbi"),
         )
         print("[INFO] Database connection pool created successfully.")
 
@@ -35,11 +33,13 @@ async def connect_to_db():
         print(f"[ERROR] Failed to create database connection pool: {e}")
         raise
 
+
 async def close_db_connection():
     global pool
     if pool:
         await pool.close()
         print("[INFO] Database connection pool closed.")
+
 
 async def close_redis_connection():
     global redis_client
@@ -47,7 +47,10 @@ async def close_redis_connection():
         await redis_client.close()
         print("[INFO] Redis client connection closed.")
 
-async def get_user_latest_conversation(user_uuid: str, target_user_uuid: str) -> Optional[Dict]:
+
+async def get_user_latest_conversation(
+    user_uuid: str, target_user_uuid: str
+) -> Optional[Dict]:
     """Retrieves the latest conversation for a given user."""
     if pool is None:
         raise Exception("Database connection pool is not initialized.")
@@ -60,11 +63,14 @@ async def get_user_latest_conversation(user_uuid: str, target_user_uuid: str) ->
             ORDER BY updated_at DESC
             LIMIT 1;
             """,
-            uuid.UUID(user_uuid), uuid.UUID(target_user_uuid)
+            uuid.UUID(user_uuid),
+            uuid.UUID(target_user_uuid),
         )
 
         if not conversation_record:
-            print(f"[INFO] No conversation found for user {user_uuid} with target {target_user_uuid}")
+            print(
+                f"[INFO] No conversation found for user {user_uuid} with target {target_user_uuid}"
+            )
             return None
 
         messages_records = await conn.fetch(
@@ -73,7 +79,7 @@ async def get_user_latest_conversation(user_uuid: str, target_user_uuid: str) ->
             WHERE conversation_id = $1
             ORDER BY created_at ASC;
             """,
-            conversation_record['id']
+            conversation_record["id"],
         )
 
         messages = [
@@ -81,14 +87,17 @@ async def get_user_latest_conversation(user_uuid: str, target_user_uuid: str) ->
             for r in messages_records
         ]
         return {
-            "conversation_id": str(conversation_record['id']),
-            "title": conversation_record['title'],
+            "conversation_id": str(conversation_record["id"]),
+            "title": conversation_record["title"],
             "messages": messages,
-            "created_at": conversation_record['created_at'],
-            "updated_at": conversation_record['updated_at']
+            "created_at": conversation_record["created_at"],
+            "updated_at": conversation_record["updated_at"],
         }
 
-async def create_conversation(user_uuid: str, target_user_uuid: str) -> str: # Removed system_prompt parameter
+
+async def create_conversation(
+    user_uuid: str, target_user_uuid: str
+) -> str:  # Removed system_prompt parameter
     """Creates a new conversation and adds the system message."""
     if pool is None:
         raise Exception("Database connection pool is not initialized.")
@@ -99,11 +108,16 @@ async def create_conversation(user_uuid: str, target_user_uuid: str) -> str: # R
             INSERT INTO fraud_conversations (id, user_uuid, target_user_uuid)
             VALUES ($1, $2, $3);
             """,
-            conversation_id, uuid.UUID(user_uuid), uuid.UUID(target_user_uuid)
+            conversation_id,
+            uuid.UUID(user_uuid),
+            uuid.UUID(target_user_uuid),
         )
-        print(f"[INFO] Created new conversation {conversation_id} for user {user_uuid} with target {target_user_uuid}")
+        print(
+            f"[INFO] Created new conversation {conversation_id} for user {user_uuid} with target {target_user_uuid}"
+        )
         # await add_message(str(conversation_id), "system", SYSTEM_PROMPT) # Use imported SYSTEM_PROMPT
         return str(conversation_id)
+
 
 async def add_message(conversation_id: str, role: str, content: str) -> str:
     """Adds a message to an existing conversation."""
@@ -116,7 +130,10 @@ async def add_message(conversation_id: str, role: str, content: str) -> str:
             INSERT INTO fraud_messages (id, conversation_id, role, content)
             VALUES ($1, $2, $3, $4);
             """,
-            message_id, uuid.UUID(conversation_id), role, content,
+            message_id,
+            uuid.UUID(conversation_id),
+            role,
+            content,
         )
         # Update conversation's updated_at timestamp
         await conn.execute(
@@ -125,22 +142,25 @@ async def add_message(conversation_id: str, role: str, content: str) -> str:
             SET updated_at = NOW()
             WHERE id = $1;
             """,
-            uuid.UUID(conversation_id)
+            uuid.UUID(conversation_id),
         )
         return str(message_id)
+
 
 async def set_call_token(caller_id: str, callee_id: str, expiration_seconds: int = 60):
     """Sets a call token for a user in Redis with an expiration time."""
     if redis_client is None:
         raise Exception("Redis client is not initialized.")
-    
+
     token = secrets.token_urlsafe(32)
     await redis_client.set(
         f"call_token:{token}",
-        json.dumps({
-            "caller": caller_id,
-            "callee": callee_id,
-        }),
+        json.dumps(
+            {
+                "caller": caller_id,
+                "callee": callee_id,
+            }
+        ),
         ex=expiration_seconds,
     )
     return token

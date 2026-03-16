@@ -25,7 +25,6 @@ build/
 **/ios/Flutter/Flutter.podspec
 
 # Web
-lib/generated_plugin_registrant.dart
 
 # IDE / Editors
 .vscode/

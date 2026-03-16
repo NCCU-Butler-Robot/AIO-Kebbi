@@ -1,8 +1,9 @@
 import asyncio
+import uuid
 from io import BytesIO
+
 import redis.asyncio as redis
 from gtts import gTTS
-import uuid
 
 
 async def tts_worker():
@@ -28,8 +29,10 @@ async def tts_worker():
     while True:
         try:
             # Read from the stream. '>' means get new messages. BLOCK 0 means wait forever.
-            response = await r.xreadgroup(group_name, consumer_name, {stream_name: ">"}, count=1, block=0)
-            
+            response = await r.xreadgroup(
+                group_name, consumer_name, {stream_name: ">"}, count=1, block=0
+            )
+
             if not response:
                 continue
 
@@ -37,11 +40,15 @@ async def tts_worker():
             stream_message_id, data = messages[0]
 
             # Decode byte keys and values from Redis
-            decoded_data = {k.decode('utf-8'): v.decode('utf-8') for k, v in data.items()}
+            decoded_data = {
+                k.decode("utf-8"): v.decode("utf-8") for k, v in data.items()
+            }
 
             if decoded_data.get("type") == "tts_generation_request":
-                print(f"[TTS Worker] Received job {stream_message_id} for installation_id: {decoded_data.get('installation_id')}")
-                
+                print(
+                    f"[TTS Worker] Received job {stream_message_id} for installation_id: {decoded_data.get('installation_id')}"
+                )
+
                 # Generate audio in a separate thread to avoid blocking the event loop.
                 def generate_audio():
                     mp3_fp = BytesIO()
@@ -66,8 +73,10 @@ async def tts_worker():
                     "audio_key": audio_key,
                 }
                 await r.xadd(stream_name, delivery_event)
-                print(f"[TTS Worker] Added audio_delivery event for job {stream_message_id}")
-            
+                print(
+                    f"[TTS Worker] Added audio_delivery event for job {stream_message_id}"
+                )
+
             # Acknowledge the message so it's not delivered again.
             await r.xack(stream_name, group_name, stream_message_id)
 

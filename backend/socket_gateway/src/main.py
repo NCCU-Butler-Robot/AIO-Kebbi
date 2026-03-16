@@ -4,10 +4,10 @@ import os
 import time
 from contextlib import asynccontextmanager
 
-import redis.asyncio as redis
 import socketio
 from fastapi import FastAPI
-from jose import JWTError, jwt
+from fastapi.middleware.cors import CORSMiddleware
+from jose import jwt
 
 from .db_manager import database
 
@@ -16,9 +16,7 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 
 if not JWT_SECRET_KEY:
-    raise ValueError(
-        "JWT_SECRET_KEY must be set in the environment"
-    )
+    raise ValueError("JWT_SECRET_KEY must be set in the environment")
 
 # 1. Set up Redis manager for scaling across multiple instances
 # 'redis://' assumes redis is running locally on default port 6379
@@ -57,6 +55,13 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app and mount Socket.IO
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.mount("/", socketio.ASGIApp(sio))
 
 
@@ -138,8 +143,6 @@ app.mount("/", socketio.ASGIApp(sio))
 #             await asyncio.sleep(5)
 
 
-
-
 @sio.event
 async def connect(sid, environ, auth):
     # 1. Access the ASGI scope
@@ -158,7 +161,6 @@ async def connect(sid, environ, auth):
     #         # Join a room named after the user_id for easy broadcasting
     #         print(f"Connected: {sid} - User: {username} (ID: {user_id}) on device {installation_id}")
 
-
     access_token = auth.get("access_token")
     call_token = auth.get("call_token")
     payload = jwt.decode(access_token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
@@ -167,7 +169,6 @@ async def connect(sid, environ, auth):
     user_id: str | None = payload.get("user_id")
 
     if user_id and call_token:
-
         key = f"call_token:{call_token}"
 
         if not database.redis_client:
@@ -181,7 +182,7 @@ async def connect(sid, environ, auth):
         if not value:
             print("Invalid or expired call_token")
             return False
-        
+
         data = json.loads(value)
 
         caller_id = data["caller"]
@@ -194,7 +195,11 @@ async def connect(sid, environ, auth):
             {
                 "username": username,
                 "user_id": user_id,
-                "role": "caller" if caller_id == user_id else "callee" if callee_id == user_id else "unknown",
+                "role": "caller"
+                if caller_id == user_id
+                else "callee"
+                if callee_id == user_id
+                else "unknown",
                 "caller_id": caller_id,
                 "callee_id": callee_id,
                 "call_token": call_token,
@@ -212,6 +217,7 @@ async def connect(sid, environ, auth):
     #     print(f"Connection rejected: {sid} - No ASGI scope")
     #     return False
 
+
 @sio.event
 async def disconnect(sid):
     # Use get_session for a simple read-only operation before the session is destroyed.
@@ -220,7 +226,9 @@ async def disconnect(sid):
         room = session.get("room")
         if room:
             await sio.leave_room(sid, room)
-            print(f"Left room: {room} for SID: {sid}. User: {session.get('username')} ({session.get('role')})")
+            print(
+                f"Left room: {room} for SID: {sid}. User: {session.get('username')} ({session.get('role')})"
+            )
 
         else:
             print(f"Disconnected: {sid} (no room info) DEBUG: {session}")
@@ -239,6 +247,7 @@ async def disconnect(sid):
 #             await sio.emit("response", f"Hello {user_info['username']}: {data}", to=sid)
 #         else:
 #             await sio.emit("error", "Unauthorized", to=sid)
+
 
 async def refresh_key(key):
     if not database.redis_client:
@@ -264,7 +273,6 @@ async def handle_audio_chunk(sid, metadata, chunk):
         room = session.get("room")
         if not room:
             return
-        
 
         call_token = session.get("call_token")
         key = f"call_token:{call_token}"

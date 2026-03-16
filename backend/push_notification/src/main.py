@@ -6,6 +6,7 @@ from copy import deepcopy
 
 import firebase_admin
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from firebase_admin import messaging
 from pydantic import BaseModel
 from pywebpush import WebPushException, webpush
@@ -163,6 +164,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.post("/api/push/subscribe/")

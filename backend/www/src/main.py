@@ -2,12 +2,12 @@
 AIO-Kebbi Web Interface Service
 FastAPI server for serving web UI and proxying API calls
 """
+
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.middleware.cors import CORSMiddleware
-import os
 
 app = FastAPI(title="AIO-Kebbi Web Interface")
 
@@ -59,4 +59,5 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

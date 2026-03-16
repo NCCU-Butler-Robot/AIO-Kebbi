@@ -1,5 +1,5 @@
 import asyncio
-from typing import Dict, List, Union
+from typing import Dict, List
 
 from ..db_manager.database import (
     add_message as db_add_message,  # Alias to avoid name conflict
@@ -7,10 +7,7 @@ from ..db_manager.database import (
 from ..db_manager.database import (
     create_conversation as db_create_conversation,  # Alias to avoid name conflict
 )
-from ..db_manager.database import (
-    get_user_latest_conversation,
-)
-from ..llm_pipeline import SYSTEM_PROMPT, LLMPipeline
+from ..llm_pipeline import LLMPipeline
 
 
 async def handle_fraud_chat_message(
