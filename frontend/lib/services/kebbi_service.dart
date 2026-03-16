@@ -52,7 +52,8 @@ class KebbiService {
 
   static Future<void> init() async {
     if (!_isAndroidNative) {
-      debugPrint('[Kebbi] init skipped (${kIsWeb ? 'web' : defaultTargetPlatform.name})');
+      debugPrint(
+          '[Kebbi] init skipped (${kIsWeb ? 'web' : defaultTargetPlatform.name})');
       return;
     }
     try {
@@ -129,6 +130,15 @@ class KebbiService {
 
   static Future<void> startVoskSTT() async {
     if (!_isAndroidNative) return;
+
+    // Auto-init if model exists on disk but wasn't loaded (e.g., app restart)
+    final ready = await isVoskModelReady();
+    if (ready) {
+      try {
+        await initVosk();
+      } catch (_) {}
+    }
+
     try {
       await _ch.invokeMethod<void>('startVoskSTT');
     } on PlatformException catch (e) {

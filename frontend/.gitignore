@@ -1,30 +1,45 @@
-# Flutter/Dart/Pub
+# Flutter / Dart / Pub
 .dart_tool/
 .packages
+.pub/
 .pub-cache/
 build/
+coverage/
 .flutter-plugins
 .flutter-plugins-dependencies
+.flutter-versions
 .metadata
 
 # macOS
 .DS_Store
 
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
 # Android
+**/android/.gradle/
 **/android/local.properties
 **/android/key.properties
+**/android/.kotlin/
+**/android/app/build/
 **/*.keystore
 **/*.ks
-**/android/.gradle/
+**/*.jks
 
 # iOS
 **/ios/Pods/
 **/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
 **/ios/Flutter/Generated.xcconfig
 **/ios/Flutter/ephemeral/
-**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/App.framework
+**/ios/ServiceDefinitions.json
 
 # Web
+build/web/
 
 # IDE / Editors
 .vscode/
@@ -40,9 +55,14 @@ xcuserdata/
 build/
 *.apk
 *.aab
+*.ipa
 app-release.apk.sha1
 
-# Keystore
+# Keystore / signing
 key.properties
 *.jks
 *.keystore
+
+# Misc / tooling
+.claude/
+.env
