@@ -312,11 +312,21 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     final txt = _textController.text.trim();
     if (txt.isEmpty || _isLoading) return;
 
+    // Stop STT - don't listen while processing response
+    if (kIsWeb) {
+      await WebSpeechService.I.stopListening();
+    } else if (_useKebbi == true) {
+      await KebbiService.stopSTT();
+    } else if (_useKebbi == false) {
+      await KebbiService.stopVoskSTT();
+    }
+
     setState(() {
       _messages.add(_ChatMessage(
           from: _Speaker.user, text: txt, time: _fmtTime(DateTime.now())));
       _textController.clear();
       _isLoading = true;
+      _isRecording = false;
       _liveTranscript = 'Butler is thinking…';
     });
     _scrollToBottom();
