@@ -97,13 +97,13 @@ class AudioService {
   }
 
   // ---------- 播放 ----------
-  Future<void> playBytes(Uint8List bytes) async {
+  Future<void> playBytes(Uint8List bytes, {void Function()? onComplete}) async {
     await init();
     await _player.setVolume(_playerVolume);
     await _player.startPlayer(
       fromDataBuffer: bytes,
-      codec: Codec.pcm16WAV, 
-      whenFinished: () {},
+      codec: Codec.pcm16WAV,
+      whenFinished: onComplete ?? () {},
     );
   }
 
@@ -113,13 +113,14 @@ class AudioService {
     }
   }
 
-  Future<void> playMp3Bytes(Uint8List bytes) async {
+  Future<void> playMp3Bytes(Uint8List bytes,
+      {void Function()? onComplete}) async {
     await init();
     await _player.setVolume(_playerVolume);
     await _player.startPlayer(
       fromDataBuffer: bytes,
       codec: Codec.mp3,
-      whenFinished: () {},
+      whenFinished: onComplete ?? () {},
     );
   }
 
@@ -135,7 +136,7 @@ class AudioService {
     _pcmSub = _pcmCtrl!.stream.listen(onChunk);
 
     await _fsRecorder.startRecorder(
-      toStream: _pcmCtrl!.sink, 
+      toStream: _pcmCtrl!.sink,
       codec: Codec.pcm16,
       sampleRate: 16000,
       numChannels: 1,

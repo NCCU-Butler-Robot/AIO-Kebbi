@@ -145,11 +145,82 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
 
   // ── Recording toggle ──────────────────────────────────────────────────────
 
+  Future<void> _startSTT() async {
+    _useKebbi ??= await KebbiService.isKebbiAvailable();
+
+    if (_useKebbi!) {
+      try {
+        await KebbiService.startSTT();
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _isBusy = false;
+            _liveTranscript = 'NuwaSDK STT error: $e';
+          });
+        }
+        return;
+      }
+    } else {
+      if (!_voskModelReady) {
+        setState(() {
+          _voskDownloadProgress = 0;
+          _liveTranscript = 'Preparing voice model…';
+        });
+
+        try {
+          await KebbiService.initVosk();
+          setState(() {
+            _voskModelReady = true;
+            _voskDownloadProgress = null;
+          });
+        } catch (e) {
+          if (mounted) {
+            setState(() {
+              _isBusy = false;
+              _voskDownloadProgress = null;
+              _liveTranscript = 'Model download failed: $e';
+            });
+          }
+          return;
+        }
+      }
+
+      final micStatus = await Permission.microphone.request();
+      if (!micStatus.isGranted) {
+        if (mounted) {
+          final isPermanentlyDenied =
+              await Permission.microphone.isPermanentlyDenied;
+          setState(() {
+            _isBusy = false;
+            _micPermissionGranted = false;
+            _isPermanentlyDenied = isPermanentlyDenied;
+            _liveTranscript = isPermanentlyDenied
+                ? 'Microphone permission denied. Tap settings icon to open Settings.'
+                : 'Microphone permission is required.';
+          });
+        }
+        return;
+      }
+      _micPermissionGranted = true;
+      _isPermanentlyDenied = false;
+
+      await KebbiService.startVoskSTT();
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isBusy = false;
+      _isRecording = true;
+      _liveTranscript = 'Listening…';
+      _textController.clear();
+    });
+    _autoSendOnResult = true;
+  }
+
   Future<void> _toggleRecording() async {
     if (_isLoading || _isBusy) return;
 
     if (_isRecording) {
-      // Manual stop → fill text field, don't auto-send
       _autoSendOnResult = false;
       if (_useKebbi == true) {
         await KebbiService.stopSTT();
@@ -171,81 +242,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     });
 
     try {
-      // ── Detect backend once ──────────────────────────────────────────────
-      _useKebbi ??= await KebbiService.isKebbiAvailable();
-
-      if (_useKebbi!) {
-        // ── Kebbi robot: NuwaSDK STT ────────────────────────────────────
-        try {
-          await KebbiService.startSTT();
-        } catch (e) {
-          // NuwaSDK failed — Kebbi might not have Google Speech either,
-          // so surface the real error instead of falling through to Vosk.
-          if (mounted) {
-            setState(() {
-              _isBusy = false;
-              _liveTranscript = 'NuwaSDK STT error: $e';
-            });
-          }
-          return;
-        }
-      } else {
-        // ── Non-Kebbi device: Vosk offline STT ─────────────────────────
-        if (!_voskModelReady) {
-          // Download + extract + load model (shows progress via callback)
-          setState(() {
-            _voskDownloadProgress = 0;
-            _liveTranscript = 'Preparing voice model…';
-          });
-
-          try {
-            await KebbiService.initVosk();
-            setState(() {
-              _voskModelReady = true;
-              _voskDownloadProgress = null;
-            });
-          } catch (e) {
-            if (mounted) {
-              setState(() {
-                _isBusy = false;
-                _voskDownloadProgress = null;
-                _liveTranscript = 'Model download failed: $e';
-              });
-            }
-            return;
-          }
-        }
-
-        // Request mic permission before Vosk opens AudioRecord
-        final micStatus = await Permission.microphone.request();
-        if (!micStatus.isGranted) {
-          if (mounted) {
-            final isPermanentlyDenied = await Permission.microphone.isPermanentlyDenied;
-            setState(() {
-              _isBusy = false;
-              _micPermissionGranted = false;
-              _isPermanentlyDenied = isPermanentlyDenied;
-              _liveTranscript = isPermanentlyDenied
-                  ? 'Microphone permission denied. Tap settings icon to open Settings.'
-                  : 'Microphone permission is required.';
-            });
-          }
-          return;
-        }
-        _micPermissionGranted = true;
-        _isPermanentlyDenied = false;
-
-        await KebbiService.startVoskSTT();
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _isBusy = false;
-        _isRecording = true;
-        _liveTranscript = 'Listening…';
-        _textController.clear();
-      });
-      _autoSendOnResult = true;
+      await _startSTT();
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -306,8 +303,21 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
       _scrollToBottom();
 
       if (result.audioBytes != null) {
-        await AudioService.I.playMp3Bytes(result.audioBytes!);
+        await AudioService.I.playMp3Bytes(
+          result.audioBytes!,
+          onComplete: () {
+            if (!mounted) return;
+            setState(() {
+              _isLoading = false;
+              _liveTranscript = 'Listening…';
+            });
+            _startSTT();
+          },
+        );
+        return;
       }
+
+      if (mounted) setState(() => _isLoading = false);
     } catch (e) {
       setState(() {
         _messages.add(_ChatMessage(
@@ -318,7 +328,6 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
         _liveTranscript = 'Tap mic to start recording...';
       });
       _scrollToBottom();
-    } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -373,8 +382,8 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                   children: [
                     Text(
                       _isRecording ? 'Listening…' : 'Paused',
-                      style: GoogleFonts.itim(
-                          fontSize: 14, color: Colors.white70),
+                      style:
+                          GoogleFonts.itim(fontSize: 14, color: Colors.white70),
                     ),
                     const SizedBox(height: 8),
                     FakeSiriWave(active: _isRecording),
@@ -404,8 +413,8 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                       child: Text(
                         _liveTranscript,
                         textAlign: TextAlign.center,
-                        style: GoogleFonts.itim(
-                            fontSize: 15, color: Colors.white),
+                        style:
+                            GoogleFonts.itim(fontSize: 15, color: Colors.white),
                       ),
                     ),
                   ],
@@ -419,8 +428,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                   children: [
                     Expanded(
                       child: Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(14),
@@ -489,8 +497,11 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                                     color: Colors.white, strokeWidth: 2),
                               )
                             : Icon(
-                                (_isPermanentlyDenied && !_micPermissionGranted) || _isRecording
-                                    ? (_isPermanentlyDenied && !_micPermissionGranted
+                                (_isPermanentlyDenied &&
+                                            !_micPermissionGranted) ||
+                                        _isRecording
+                                    ? (_isPermanentlyDenied &&
+                                            !_micPermissionGranted
                                         ? Icons.settings
                                         : Icons.mic)
                                     : (_micPermissionGranted
@@ -539,8 +550,7 @@ class _ChatBubble extends StatelessWidget {
           ConstrainedBox(
             constraints: BoxConstraints(maxWidth: maxW),
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
                 color: isUser ? kSeaBlue : Colors.white12,
                 borderRadius: BorderRadius.circular(18),
@@ -558,8 +568,8 @@ class _ChatBubble extends StatelessWidget {
                     alignment: Alignment.bottomRight,
                     child: Text(
                       message.time,
-                      style: GoogleFonts.itim(
-                          fontSize: 12, color: Colors.white70),
+                      style:
+                          GoogleFonts.itim(fontSize: 12, color: Colors.white70),
                     ),
                   ),
                 ],
