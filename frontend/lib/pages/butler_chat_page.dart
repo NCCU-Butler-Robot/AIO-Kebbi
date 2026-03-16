@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -9,6 +10,7 @@ import '../di/service_locator.dart';
 import '../services/api_service.dart';
 import '../services/audio_service.dart';
 import '../services/kebbi_service.dart';
+import '../services/web_speech_service.dart';
 
 class ButlerChatPage extends StatefulWidget {
   const ButlerChatPage({super.key});
@@ -58,6 +60,11 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     KebbiService.setSTTCallback(_onSTTResult);
     KebbiService.setVoskProgressCallback(_onVoskProgress);
 
+    // Web: initialize WebSpeechService callback
+    if (kIsWeb) {
+      WebSpeechService.I.setCallback(_onSTTResult);
+    }
+
     // Pre-check if the model is already on disk (instant, no download UI)
     _checkVoskModelCached();
     // Request microphone permission proactively
@@ -98,7 +105,10 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   void dispose() {
     KebbiService.setSTTCallback(null);
     KebbiService.setVoskProgressCallback(null);
-    if (_useKebbi == true) {
+    if (kIsWeb) {
+      WebSpeechService.I.stopListening();
+      WebSpeechService.I.setCallback(null);
+    } else if (_useKebbi == true) {
       KebbiService.stopSTT();
     } else if (_useKebbi == false) {
       KebbiService.stopVoskSTT();
@@ -146,6 +156,30 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   // ── Recording toggle ──────────────────────────────────────────────────────
 
   Future<void> _startSTT() async {
+    // Web: use Web Speech API
+    if (kIsWeb) {
+      final ok = await WebSpeechService.I.startListening();
+      if (!ok) {
+        if (mounted) {
+          setState(() {
+            _isBusy = false;
+            _liveTranscript = 'Web speech not available';
+          });
+        }
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _isBusy = false;
+        _isRecording = true;
+        _liveTranscript = 'Listening…';
+        _textController.clear();
+      });
+      _autoSendOnResult = true;
+      return;
+    }
+
+    // Android: use Kebbi or Vosk
     _useKebbi ??= await KebbiService.isKebbiAvailable();
 
     if (_useKebbi!) {
@@ -222,11 +256,16 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
 
     if (_isRecording) {
       _autoSendOnResult = false;
-      if (_useKebbi == true) {
+
+      // Web: stop WebSpeechService
+      if (kIsWeb) {
+        await WebSpeechService.I.stopListening();
+      } else if (_useKebbi == true) {
         await KebbiService.stopSTT();
       } else {
         await KebbiService.stopVoskSTT();
       }
+
       setState(() {
         _isRecording = false;
         _liveTranscript = _textController.text.isNotEmpty

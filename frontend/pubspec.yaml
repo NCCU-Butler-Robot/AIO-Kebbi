@@ -29,6 +29,7 @@ dependencies:
   webview_flutter: ^4.10.0
   url_launcher: ^6.3.0
   pwa_install: ^0.0.6
+  speech_to_text: ^7.3.0
 
 dev_dependencies:
   flutter_test:
