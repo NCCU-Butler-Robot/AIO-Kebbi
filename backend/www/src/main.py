@@ -27,31 +27,31 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/web/", response_class=HTMLResponse)
 async def root(request: Request):
     """Redirect to login page"""
     return templates.TemplateResponse("index.html", {"request": request})
 
 
-@app.get("/login", response_class=HTMLResponse)
+@app.get("/web/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     """Login page"""
     return templates.TemplateResponse("login.html", {"request": request})
 
 
-@app.get("/register", response_class=HTMLResponse)
+@app.get("/web/register", response_class=HTMLResponse)
 async def register_page(request: Request):
     """Register page"""
     return templates.TemplateResponse("register.html", {"request": request})
 
 
-@app.get("/call", response_class=HTMLResponse)
+@app.get("/web/call", response_class=HTMLResponse)
 async def call_page(request: Request):
     """Anti-fraud call page"""
     return templates.TemplateResponse("call.html", {"request": request})
 
 
-@app.get("/health")
+@app.get("/web/health")
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "www"}

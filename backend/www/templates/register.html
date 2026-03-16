@@ -82,7 +82,7 @@
                 <div class="text-center">
                     <p class="text-muted mb-0">
                         Already have an account? 
-                        <a href="/login" class="text-decoration-none">Login here</a>
+                        <a href="/web/login" class="text-decoration-none">Login here</a>
                     </p>
                 </div>
             </div>
@@ -134,7 +134,7 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
             
             // Redirect to login page after 2 seconds
             setTimeout(() => {
-                window.location.href = '/login';
+                window.location.href = '/web/login';
             }, 2000);
         } else {
             showAlert(data.detail || 'Registration failed. Please try again.', 'danger');

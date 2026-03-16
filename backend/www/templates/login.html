@@ -48,7 +48,7 @@
                 <div class="text-center">
                     <p class="text-muted mb-0">
                         Don't have an account? 
-                        <a href="/register" class="text-decoration-none">Register here</a>
+                        <a href="/web/register" class="text-decoration-none">Register here</a>
                     </p>
                 </div>
             </div>
@@ -87,7 +87,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             
             // Redirect to call page after 1 second
             setTimeout(() => {
-                window.location.href = '/call';
+                window.location.href = '/web/call';
             }, 1000);
         } else {
             showAlert(data.detail || 'Login failed. Please check your credentials.', 'danger');

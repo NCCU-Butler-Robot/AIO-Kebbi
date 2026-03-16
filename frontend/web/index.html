@@ -17,6 +17,33 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <script>
+    let deferredPrompt;
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      deferredPrompt = e;
+    });
+
+    function promptInstall(){
+       deferredPrompt.prompt();
+    }
+
+    window.addEventListener('appinstalled', () => {
+      deferredPrompt = null;
+    });
+
+    function getLaunchMode() {
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+      if(deferredPrompt) hasPrompt();
+      if (document.referrer.startsWith('android-app://')) {
+        appLaunchedAsTWA();
+      } else if (navigator.standalone || isStandalone) {
+        appLaunchedAsPWA();
+      } else {
+        window.appLaunchedInBrowser();
+      }
+    }
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

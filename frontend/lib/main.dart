@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:pwa_install/pwa_install.dart';
 
 import 'constants.dart';
 import 'providers/auth_provider.dart';
 import 'providers/call_provider.dart';
 import 'widgets/auth_guard.dart';
 import 'di/service_locator.dart';
-
 
 import 'pages/welcome_page.dart';
 import 'pages/login_page.dart';
@@ -20,8 +20,11 @@ import 'pages/butler_chat_page.dart';
 import 'services/kebbi_service.dart';
 
 Future<void> main() async {
-  
   WidgetsFlutterBinding.ensureInitialized();
+
+  PWAInstall().setup(installCallback: () {
+    debugPrint('APP INSTALLED!');
+  });
 
   KebbiService.init();
   WidgetsFlutterBinding.ensureInitialized();
