@@ -1,10 +1,11 @@
 import asyncio
 import json
+import math
 import os
 import urllib.parse
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Query
@@ -49,6 +50,149 @@ FRAUD_DETECTION_API_URL = fraud_api_url
 
 # 用於存儲每個對話的檢測結果
 conversation_detection_results = {}
+
+# ===== SSCI (Streaming Scam Confidence Index) Parameters =====
+# 每次目前判斷約等於 2 句（caller + receiver），所以每 3 次判斷對應 Δn=6。
+INFERENCES_PER_TRIGGER = 3
+SENTENCES_PER_INFERENCE = 2
+DELTA_N = INFERENCES_PER_TRIGGER * SENTENCES_PER_INFERENCE  # = 6
+LAMBDA = 4.0
+TAU = 6.0
+BETA_PRIOR_A = 0.05
+BETA_PRIOR_B = 0.05
+ZETA = 200.0
+ETA = 1.5
+SSCI_SCAM_THRESHOLD = 0.65
+
+
+def _extract_trigger_results(raw_results: list[bool]) -> list[bool]:
+    """
+    從逐次判斷結果中，取第 3、6、9... 筆作為 trigger 決策序列。
+    例如 [F, T, F, T, T, T] -> [F, T]
+    """
+    if not raw_results:
+        return []
+    return [
+        raw_results[idx]
+        for idx in range(INFERENCES_PER_TRIGGER - 1, len(raw_results), INFERENCES_PER_TRIGGER)
+    ]
+
+
+def _compute_ssci(trigger_results: list[bool]) -> dict[str, Any] | None:
+    """
+    依照 SSCI 定義計算目前 trigger 的 confidence 與三個子分數。
+    """
+    if not trigger_results:
+        return None
+
+    k = len(trigger_results)
+    y_k = trigger_results[-1]
+    n_values = [DELTA_N * i for i in range(1, k + 1)]  # 6, 12, 18, ...
+    n_k = float(n_values[-1])
+
+    # Phase 1: Evidence by length
+    evidence = 1.0 - math.exp(-(n_k / LAMBDA))
+
+    # Phase 2: Historical agreement (exclude current trigger, with beta smoothing)
+    if k == 1:
+        agreement = 0.5
+    else:
+        weighted_match_sum = 0.0
+        weight_sum = 0.0
+        for j in range(k - 1):
+            n_j = float(n_values[j])
+            weight = math.exp(-((n_k - n_j) / TAU))
+            weight_sum += weight
+            if trigger_results[j] == y_k:
+                weighted_match_sum += weight
+
+        agreement = (weighted_match_sum + BETA_PRIOR_A) / (
+            weight_sum + BETA_PRIOR_A + BETA_PRIOR_B
+        )
+
+    # Phase 3: Recent stability (EMA over flips)
+    if k == 1:
+        flip_ema = 0.0
+        stability = 0.5
+        rho_k = 0.0
+        c_k = 0
+    else:
+        flip_ema = 0.0
+        prev_n = float(n_values[0])
+        rho_k = 0.0
+        c_k = 0
+        for idx in range(1, k):
+            curr_n = float(n_values[idx])
+            delta_n = curr_n - prev_n
+            rho_k = 1.0 - math.exp(-(delta_n / ZETA))
+            c_k = 1 if trigger_results[idx] != trigger_results[idx - 1] else 0
+            flip_ema = ((1.0 - rho_k) * flip_ema) + (rho_k * float(c_k))
+            prev_n = curr_n
+
+        stability = math.exp(-(ETA * flip_ema))
+
+    confidence = evidence * agreement * stability
+
+    return {
+        "available": True,
+        "trigger_index": k,
+        "n_k": int(n_k),
+        "latest_trigger_decision": y_k,
+        "trigger_results": trigger_results,
+        "evidence": evidence,
+        "agreement": agreement,
+        "stability": stability,
+        "flip_ema": flip_ema,
+        "rho_k": rho_k,
+        "c_k": c_k,
+        "confidence": confidence,
+    }
+
+
+def _build_ssci_payload(raw_results: list[bool], updated: bool) -> dict[str, Any]:
+    trigger_results = _extract_trigger_results(raw_results)
+    ssci_result = _compute_ssci(trigger_results)
+
+    payload: dict[str, Any] = {
+        "available": False,
+        "updated": updated,
+        "raw_inference_count": len(raw_results),
+        "trigger_count": len(trigger_results),
+        "trigger_every_inferences": INFERENCES_PER_TRIGGER,
+        "sentences_per_inference": SENTENCES_PER_INFERENCE,
+        "delta_n": DELTA_N,
+    }
+
+    if not ssci_result:
+        return payload
+
+    payload.update(ssci_result)
+    return payload
+
+
+def _build_ssci_headers(ssci_payload: dict[str, Any]) -> dict[str, str]:
+    headers = {
+        "X-SSCI-Available": str(ssci_payload.get("available", False)).lower(),
+        "X-SSCI-Updated": str(ssci_payload.get("updated", False)).lower(),
+        "X-SSCI-Trigger-Count": str(ssci_payload.get("trigger_count", 0)),
+        "X-SSCI-Raw-Inference-Count": str(ssci_payload.get("raw_inference_count", 0)),
+    }
+
+    if ssci_payload.get("available"):
+        headers.update(
+            {
+                "X-SSCI-Confidence": f"{float(ssci_payload.get('confidence', 0.0)):.6f}",
+                "X-SSCI-Evidence": f"{float(ssci_payload.get('evidence', 0.0)):.6f}",
+                "X-SSCI-Agreement": f"{float(ssci_payload.get('agreement', 0.0)):.6f}",
+                "X-SSCI-Stability": f"{float(ssci_payload.get('stability', 0.0)):.6f}",
+                "X-SSCI-Nk": str(ssci_payload.get("n_k", 0)),
+                "X-SSCI-Latest-Decision": str(
+                    bool(ssci_payload.get("latest_trigger_decision", False))
+                ).lower(),
+            }
+        )
+
+    return headers
 
 
 async def get_user_by_phone(phone_number: str) -> Optional[dict]:
@@ -417,6 +561,7 @@ async def fraud_chat_message(
     assistant_response = response_data["response"]
     conversation_id = response_data["conversation_id"]
     assistant_message_id = response_data["message_id"]
+    ssci_updated = False
 
     # 每次GPT回覆後，調用詐騙檢測API
     conversation_text = await format_conversation_for_detection(conversation_id)
@@ -430,30 +575,34 @@ async def fraud_chat_message(
         # 存儲檢測結果
         if detection_result is not None:
             conversation_detection_results[conversation_id].append(detection_result)
+            ssci_updated = (
+                len(conversation_detection_results[conversation_id]) % INFERENCES_PER_TRIGGER
+                == 0
+            )
             print(
                 f"[INFO] Conversation {conversation_id} detection results so far: {conversation_detection_results[conversation_id]}"
             )
 
-    # 檢查對話是否超過2.5分鐘（150秒）
+    raw_detection_results = conversation_detection_results.get(conversation_id, [])
+    ssci_payload = _build_ssci_payload(raw_detection_results, updated=ssci_updated)
+
+    # 檢查對話是否超過3分鐘（180秒）
     in_time_limit = await check_conversation_duration(
-        conversation, x_user_id, target_user, max_duration=150
+        conversation, x_user_id, target_user, max_duration=180
     )
     if not in_time_limit:
-        # 超過2.5分鐘，根據檢測結果決定是否繼續
-        results = conversation_detection_results.get(conversation_id, [])
-
-        if results:
-            true_count = sum(1 for r in results if r is True)
-            false_count = sum(1 for r in results if r is False)
+        # 超過3分鐘後，改為以 SSCI confidence 判斷
+        if ssci_payload.get("available"):
+            ssci_confidence = float(ssci_payload.get("confidence", 0.0))
+            is_scam_by_ssci = ssci_confidence > SSCI_SCAM_THRESHOLD
 
             print(
-                f"[INFO] Conversation {conversation_id} - True: {true_count}, False: {false_count}"
+                f"[INFO] Conversation {conversation_id} - SSCI confidence: {ssci_confidence:.6f}, threshold: {SSCI_SCAM_THRESHOLD:.2f}, scam={is_scam_by_ssci}"
             )
 
-            # False比較多，表示不太可能是詐騙，需要真人接電話
-            if false_count > true_count:
+            if not is_scam_by_ssci:
                 print(
-                    "[INFO] Fraud detection indicates normal conversation. Notifying real user to take over."
+                    "[INFO] SSCI indicates normal conversation (confidence <= threshold). Notifying real user to take over."
                 )
                 call_token = await database.set_call_token(
                     x_user_id, target_id, expiration_seconds=300
@@ -472,18 +621,18 @@ async def fraud_chat_message(
                 return {
                     "status": "initiate_socketio",
                     "call_token": call_token,
-                    "reason": "normal_conversation_detected",
+                    "reason": "ssci_below_threshold_normal_conversation",
+                    "ssci": ssci_payload,
                 }
             else:
-                # True比較多或相等，繼續對話
                 print(
-                    "[INFO] Fraud detection indicates potential scam. Continuing AI conversation."
+                    "[INFO] SSCI indicates potential scam (confidence > threshold). Continuing AI conversation."
                 )
                 # 繼續處理，返回正常的音頻響應
         else:
-            # 如果沒有檢測結果，預設觸發通知（安全起見）
+            # 若 SSCI 尚不可用（例如外部判斷持續失敗），預設觸發通知（安全起見）
             print(
-                "[WARNING] No detection results available. Notifying real user as precaution."
+                "[WARNING] SSCI is unavailable. Notifying real user as precaution."
             )
             call_token = await database.set_call_token(
                 x_user_id, target_id, expiration_seconds=300
@@ -499,7 +648,8 @@ async def fraud_chat_message(
             return {
                 "status": "initiate_socketio",
                 "call_token": call_token,
-                "reason": "no_detection_results",
+                "reason": "ssci_unavailable",
+                "ssci": ssci_payload,
             }
 
     if text_only == "true":
@@ -512,6 +662,7 @@ async def fraud_chat_message(
             "service_type": "anti-fraud",
             "target_name": target_name,
             "target_phone": message.phone_number,
+            "ssci": ssci_payload,
         }
 
     # Generate audio from text using TTS service
@@ -532,6 +683,7 @@ async def fraud_chat_message(
                 "X-Target-Name": target_name,
                 "X-Target-Phone": message.phone_number,
                 "Content-Disposition": f"attachment; filename={target_name}_response.mp3",
+                **_build_ssci_headers(ssci_payload),
             },
         )
 
@@ -557,6 +709,7 @@ async def fraud_chat_message(
             "service_type": "anti-fraud",
             "target_name": target_name,
             "target_phone": message.phone_number,
+            "ssci": ssci_payload,
         }
 
 
