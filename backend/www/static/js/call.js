@@ -226,7 +226,7 @@ function handleJsonResponse(data) {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
                 // Load AudioWorklet processor
-                await audioContext.audioWorklet.addModule('/static/js/mic-processor.js');
+                await audioContext.audioWorklet.addModule('/web/static/js/mic-processor.js');
 
                 const micSource = audioContext.createMediaStreamSource(mediaStream);
 
