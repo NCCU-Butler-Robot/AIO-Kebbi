@@ -37,21 +37,27 @@ Future<void> main() async {
   setupServiceLocator();
 
   // FCM 初始化 — 前台收到訊息時顯示 AlertDialog
-  FcmService.I.onRawMessage = (data) {
+  FcmService.I.onRawMessage = (title, body, data) {
     final ctx = navigatorKey.currentContext;
     if (ctx == null) return;
     showDialog(
       context: ctx,
       builder: (dialogCtx) => AlertDialog(
-        title: const Text('FCM 訊息收到'),
+        title: Text(title ?? 'FCM 訊息收到'),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
-            children: data.entries
-                .map((e) => Text('${e.key}: ${e.value}',
-                    style: const TextStyle(fontSize: 13)))
-                .toList(),
+            children: [
+              if (body != null) ...[
+                Text(body, style: const TextStyle(fontSize: 14)),
+                const Divider(),
+              ],
+              ...data.entries.map(
+                (e) => Text('${e.key}: ${e.value}',
+                    style: const TextStyle(fontSize: 13)),
+              ),
+            ],
           ),
         ),
         actions: [

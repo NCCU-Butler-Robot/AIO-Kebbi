@@ -15,8 +15,8 @@ class FcmService {
   /// 收到 incoming_call 時的 callback → (callToken, callerName)
   void Function(String callToken, String callerName)? onIncomingCall;
 
-  /// 任何 FCM 訊息到達時的 callback → 完整 data map（供 UI 顯示 alert）
-  void Function(Map<String, dynamic> data)? onRawMessage;
+  /// 任何 FCM 訊息到達時的 callback → title, body, data（供 UI 顯示 alert）
+  void Function(String? title, String? body, Map<String, dynamic> data)? onRawMessage;
 
   /// 初始化 FCM，回傳 FCM token（供後端註冊用）
   Future<String?> initialize() async {
@@ -67,7 +67,11 @@ class FcmService {
     final data = message.data;
 
     // 通知所有 UI 顯示收到的完整內容
-    onRawMessage?.call(data);
+    onRawMessage?.call(
+      message.notification?.title,
+      message.notification?.body,
+      data,
+    );
 
     if (data['type'] == 'incoming_call') {
       final callToken = data['call_token'] as String? ?? '';
