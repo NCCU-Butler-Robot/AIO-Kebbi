@@ -15,6 +15,9 @@ class FcmService {
   /// 收到 incoming_call 時的 callback → (callToken, callerName)
   void Function(String callToken, String callerName)? onIncomingCall;
 
+  /// 任何 FCM 訊息到達時的 callback → 完整 data map（供 UI 顯示 alert）
+  void Function(Map<String, dynamic> data)? onRawMessage;
+
   /// 初始化 FCM，回傳 FCM token（供後端註冊用）
   Future<String?> initialize() async {
     // 背景 handler 必須在 Firebase.initializeApp 之後立即設定
@@ -62,6 +65,10 @@ class FcmService {
   void _handleMessage(RemoteMessage message) {
     debugPrint('[FCM] Message received: ${message.data}');
     final data = message.data;
+
+    // 通知所有 UI 顯示收到的完整內容
+    onRawMessage?.call(data);
+
     if (data['type'] == 'incoming_call') {
       final callToken = data['call_token'] as String? ?? '';
       final callerName = data['caller_name'] as String? ?? '未知來電';

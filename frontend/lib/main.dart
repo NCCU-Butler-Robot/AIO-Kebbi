@@ -36,6 +36,34 @@ Future<void> main() async {
   KebbiService.init();
   setupServiceLocator();
 
+  // FCM 初始化 — 前台收到訊息時顯示 AlertDialog
+  FcmService.I.onRawMessage = (data) {
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null) return;
+    showDialog(
+      context: ctx,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('FCM 訊息收到'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: data.entries
+                .map((e) => Text('${e.key}: ${e.value}',
+                    style: const TextStyle(fontSize: 13)))
+                .toList(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  };
+
   // FCM 初始化 — 設定 incoming_call 處理
   FcmService.I.onIncomingCall = (callToken, callerName) {
     final nav = navigatorKey.currentState;

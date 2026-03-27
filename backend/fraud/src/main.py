@@ -378,13 +378,15 @@ async def notify_callee_event(
     """Publishes events to Redis for other services to consume."""
     # Event for the socket gateway to broadcast the text message
     notification_payload = NotificationPayload(
+        title="來電通知",
+        body=f"偵測到來自 {caller_name} 的來電",
         data={
             "type": "incoming_call",
             "call_token": call_token,
             "caller_name": caller_name,
             "caller_user_id": caller_user_id,
         },
-        silent=True,
+        silent=False, # TODO in the future change to callstylenotification
         android_priority="high",
     )
     gateway_event = {
