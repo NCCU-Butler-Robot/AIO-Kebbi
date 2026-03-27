@@ -36,19 +36,14 @@ Future<void> main() async {
   KebbiService.init();
   setupServiceLocator();
 
-  // FCM 初始化 — 設定 incoming_call 處理，導航到 MonitorPage 並帶入通知資訊
-  FcmService.I.onIncomingCall = (callToken, callerName, notifTitle, notifBody) {
+  // FCM 初始化 — 用戶點通知時跳轉到 MonitorPage
+  FcmService.I.onIncomingCall = (callToken, callerName) {
     final nav = navigatorKey.currentState;
     if (nav == null) return;
 
     nav.pushAndRemoveUntil(
       MaterialPageRoute(
-        builder: (_) => MonitorPage(
-          callToken: callToken,
-          callerName: callerName,
-          notifTitle: notifTitle,
-          notifBody: notifBody,
-        ),
+        builder: (_) => MonitorPage(callToken: callToken),
       ),
       (route) => route.isFirst,
     );

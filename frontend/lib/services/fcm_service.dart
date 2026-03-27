@@ -5,22 +5,36 @@ import 'package:flutter/foundation.dart';
 @pragma('vm:entry-point')
 Future<void> _backgroundMessageHandler(RemoteMessage message) async {
   debugPrint('[FCM] Background message: ${message.data}');
-  // 只能記錄，無法導航；foreground / tap 才處理 UI
+}
+
+/// 最新一筆 FCM 通知資料
+class FcmNotifData {
+  final String? title;
+  final String? body;
+  final String? callToken;
+  final String? callerName;
+
+  const FcmNotifData({
+    this.title,
+    this.body,
+    this.callToken,
+    this.callerName,
+  });
 }
 
 class FcmService {
   FcmService._();
   static final FcmService I = FcmService._();
 
-  /// 收到 incoming_call 時的 callback → (callToken, callerName, notifTitle, notifBody)
-  void Function(String callToken, String callerName, String? notifTitle, String? notifBody)? onIncomingCall;
+  /// 最新通知資料（供 MonitorPage 等 UI 監聽）
+  final ValueNotifier<FcmNotifData?> latestNotif = ValueNotifier(null);
 
-  /// 初始化 FCM，回傳 FCM token（供後端註冊用）
+  /// 用戶點通知後的 callback → (callToken, callerName)
+  void Function(String callToken, String callerName)? onIncomingCall;
+
   Future<String?> initialize() async {
-    // 背景 handler 必須在 Firebase.initializeApp 之後立即設定
     FirebaseMessaging.onBackgroundMessage(_backgroundMessageHandler);
 
-    // 請求通知權限（Android 13+ 需要）
     final settings = await FirebaseMessaging.instance.requestPermission(
       alert: true,
       badge: true,
@@ -29,24 +43,21 @@ class FcmService {
     );
     debugPrint('[FCM] Permission: ${settings.authorizationStatus}');
 
-    // 前台訊息
-    FirebaseMessaging.onMessage.listen(_handleMessage);
+    // 前台收到：只存資料，不跳轉
+    FirebaseMessaging.onMessage.listen(_storeMessage);
 
-    // 背景 → 用戶點通知開 App
-    FirebaseMessaging.onMessageOpenedApp.listen(_handleMessage);
+    // 背景 → 用戶點通知：存資料 + 跳轉
+    FirebaseMessaging.onMessageOpenedApp.listen(_storeAndNavigate);
 
-    // App 終止狀態 → 點通知啟動
+    // App 終止 → 點通知啟動：存資料 + 跳轉
     final initial = await FirebaseMessaging.instance.getInitialMessage();
-    if (initial != null) _handleMessage(initial);
+    if (initial != null) _storeAndNavigate(initial);
 
-    // 取得 FCM token
     final token = await FirebaseMessaging.instance.getToken();
     debugPrint('[FCM] Token: $token');
 
-    // Token 更新時重新取得
     FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
       debugPrint('[FCM] Token refreshed: $newToken');
-      // 由外部決定是否重新註冊
       _onTokenRefreshed?.call(newToken);
     });
 
@@ -59,20 +70,27 @@ class FcmService {
     _onTokenRefreshed = cb;
   }
 
-  void _handleMessage(RemoteMessage message) {
+  void _storeMessage(RemoteMessage message) {
     debugPrint('[FCM] Message received: ${message.data}');
     final data = message.data;
+    if (data['type'] == 'incoming_call') {
+      latestNotif.value = FcmNotifData(
+        title: message.notification?.title,
+        body: message.notification?.body,
+        callToken: data['call_token'] as String?,
+        callerName: data['caller_name'] as String?,
+      );
+    }
+  }
 
+  void _storeAndNavigate(RemoteMessage message) {
+    _storeMessage(message);
+    final data = message.data;
     if (data['type'] == 'incoming_call') {
       final callToken = data['call_token'] as String? ?? '';
       final callerName = data['caller_name'] as String? ?? '未知來電';
       if (callToken.isNotEmpty) {
-        onIncomingCall?.call(
-          callToken,
-          callerName,
-          message.notification?.title,
-          message.notification?.body,
-        );
+        onIncomingCall?.call(callToken, callerName);
       }
     }
   }

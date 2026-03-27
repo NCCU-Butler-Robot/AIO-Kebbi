@@ -10,26 +10,16 @@ import 'package:provider/provider.dart';
 import '../constants.dart';
 import '../providers/call_provider.dart';
 import '../services/alert_service.dart';
+import '../services/fcm_service.dart';
 import '../services/kebbi_service.dart';
 import '../providers/auth_provider.dart';
 import 'call_page.dart';
 
 class MonitorPage extends StatefulWidget {
-  /// 從 initiate_socketio 收到的 call_token，有值時自動建立 Socket.IO 連線
+  /// 從 initiate_socketio 或 FCM 點通知收到的 call_token
   final String? callToken;
 
-  /// FCM 推播帶來的來電者名稱、通知標題、通知內文
-  final String? callerName;
-  final String? notifTitle;
-  final String? notifBody;
-
-  const MonitorPage({
-    super.key,
-    this.callToken,
-    this.callerName,
-    this.notifTitle,
-    this.notifBody,
-  });
+  const MonitorPage({super.key, this.callToken});
 
   @override
   State<MonitorPage> createState() => _MonitorPageState();
@@ -136,46 +126,49 @@ class _MonitorPageState extends State<MonitorPage> {
   }
 
   Widget _buildFcmNotifCard() {
-    if (widget.notifTitle == null && widget.notifBody == null && widget.callerName == null) {
-      return const SizedBox.shrink();
-    }
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xffe8f4fd),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xff90caf9)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return ValueListenableBuilder<FcmNotifData?>(
+      valueListenable: FcmService.I.latestNotif,
+      builder: (_, notif, __) {
+        if (notif == null) return const SizedBox.shrink();
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xffe8f4fd),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xff90caf9)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.notifications_active, size: 18, color: Color(0xff1565c0)),
-              const SizedBox(width: 8),
-              Text(
-                widget.notifTitle ?? '來電通知',
-                style: GoogleFonts.itim(
-                    fontSize: 15, fontWeight: FontWeight.w600, color: const Color(0xff1565c0)),
+              Row(
+                children: [
+                  const Icon(Icons.notifications_active, size: 18, color: Color(0xff1565c0)),
+                  const SizedBox(width: 8),
+                  Text(
+                    notif.title ?? '來電通知',
+                    style: GoogleFonts.itim(
+                        fontSize: 15, fontWeight: FontWeight.w600, color: const Color(0xff1565c0)),
+                  ),
+                ],
               ),
+              if (notif.body != null) ...[
+                const SizedBox(height: 4),
+                Text(notif.body!,
+                    style: GoogleFonts.itim(fontSize: 14, color: const Color(0xff1a237e))),
+              ],
+              const SizedBox(height: 6),
+              if (notif.callerName != null)
+                Text('caller_name: ${notif.callerName}',
+                    style: GoogleFonts.itim(fontSize: 12, color: Colors.grey.shade700)),
+              if (notif.callToken != null)
+                Text('call_token: ${notif.callToken}',
+                    style: GoogleFonts.itim(fontSize: 12, color: Colors.grey.shade700)),
             ],
           ),
-          if (widget.notifBody != null) ...[
-            const SizedBox(height: 4),
-            Text(widget.notifBody!,
-                style: GoogleFonts.itim(fontSize: 14, color: const Color(0xff1a237e))),
-          ],
-          const SizedBox(height: 6),
-          if (widget.callerName != null)
-            Text('caller_name: ${widget.callerName}',
-                style: GoogleFonts.itim(fontSize: 12, color: Colors.grey.shade700)),
-          if (widget.callToken != null)
-            Text('call_token: ${widget.callToken}',
-                style: GoogleFonts.itim(fontSize: 12, color: Colors.grey.shade700)),
-        ],
-      ),
+        );
+      },
     );
   }
 
