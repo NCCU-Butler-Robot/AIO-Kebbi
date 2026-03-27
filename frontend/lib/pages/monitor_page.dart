@@ -52,6 +52,9 @@ class _MonitorPageState extends State<MonitorPage> {
 
     _messenger = ScaffoldMessenger.maybeOf(context);
 
+    // 每次進入頁面時從 SharedPreferences 補讀背景通知（App 從背景恢復時 initialize 不會重跑）
+    FcmService.I.loadPersistedNotif();
+
     // 若帶有 callToken，自動建立 Socket.IO 連線
     final callToken = widget.callToken;
     if (callToken != null && callToken.isNotEmpty) {

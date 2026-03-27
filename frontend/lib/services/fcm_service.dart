@@ -59,7 +59,7 @@ class FcmService {
     debugPrint('[FCM] Permission: ${settings.authorizationStatus}');
 
     // App 啟動時從 SharedPreferences 恢復背景收到的通知
-    await _loadPersistedNotif();
+    await loadPersistedNotif();
 
     // 前台收到：存資料，不跳轉
     FirebaseMessaging.onMessage.listen(_storeMessage);
@@ -82,8 +82,8 @@ class FcmService {
     return token;
   }
 
-  /// 從 SharedPreferences 讀取背景 isolate 寫入的通知資料
-  Future<void> _loadPersistedNotif() async {
+  /// 從 SharedPreferences 讀取背景 isolate 寫入的通知資料（可從外部呼叫）
+  Future<void> loadPersistedNotif() async {
     final prefs = await SharedPreferences.getInstance();
     final callToken = prefs.getString(_kNotifCallToken);
     if (callToken != null && callToken.isNotEmpty) {
