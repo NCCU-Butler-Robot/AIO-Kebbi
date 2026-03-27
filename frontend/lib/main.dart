@@ -36,51 +36,21 @@ Future<void> main() async {
   KebbiService.init();
   setupServiceLocator();
 
-  // FCM 初始化 — 前台收到訊息時顯示 AlertDialog
-  FcmService.I.onRawMessage = (title, body, data) {
-    final ctx = navigatorKey.currentContext;
-    if (ctx == null) return;
-    showDialog(
-      context: ctx,
-      builder: (dialogCtx) => AlertDialog(
-        title: Text(title ?? 'FCM 訊息收到'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (body != null) ...[
-                Text(body, style: const TextStyle(fontSize: 14)),
-                const Divider(),
-              ],
-              ...data.entries.map(
-                (e) => Text('${e.key}: ${e.value}',
-                    style: const TextStyle(fontSize: 13)),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  };
-
-  // FCM 初始化 — 設定 incoming_call 處理
-  FcmService.I.onIncomingCall = (callToken, callerName) {
+  // FCM 初始化 — 設定 incoming_call 處理，導航到 MonitorPage 並帶入通知資訊
+  FcmService.I.onIncomingCall = (callToken, callerName, notifTitle, notifBody) {
     final nav = navigatorKey.currentState;
     if (nav == null) return;
 
-    // 若目前已在 MonitorPage 就不重複 push
     nav.pushAndRemoveUntil(
       MaterialPageRoute(
-        builder: (_) => MonitorPage(callToken: callToken),
+        builder: (_) => MonitorPage(
+          callToken: callToken,
+          callerName: callerName,
+          notifTitle: notifTitle,
+          notifBody: notifBody,
+        ),
       ),
-      (route) => route.isFirst, // 保留第一頁（WelcomePage/MenuPage）
+      (route) => route.isFirst,
     );
   };
 

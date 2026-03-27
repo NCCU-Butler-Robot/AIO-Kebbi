@@ -5,8 +5,46 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 
 
-class WelcomePage extends StatelessWidget {
+class WelcomePage extends StatefulWidget {
   const WelcomePage({super.key});
+
+  @override
+  State<WelcomePage> createState() => _WelcomePageState();
+}
+
+class _WelcomePageState extends State<WelcomePage> {
+  @override
+  void initState() {
+    super.initState();
+    // auth.init() 是非同步的，先等 frame 完成後檢查
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAuth());
+  }
+
+  void _checkAuth() {
+    if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    if (auth.isLoggedIn) {
+      Navigator.pushReplacementNamed(context, '/menu');
+    } else {
+      // 等 init() 完成後再次檢查
+      auth.addListener(_onAuthChanged);
+    }
+  }
+
+  void _onAuthChanged() {
+    if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    if (auth.isLoggedIn) {
+      auth.removeListener(_onAuthChanged);
+      Navigator.pushReplacementNamed(context, '/menu');
+    }
+  }
+
+  @override
+  void dispose() {
+    context.read<AuthProvider>().removeListener(_onAuthChanged);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
