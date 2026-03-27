@@ -105,6 +105,7 @@ class FcmService with WidgetsBindingObserver {
   /// 從 SharedPreferences 讀取歷史通知並更新 notifHistory
   Future<void> loadPersistedNotif() async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload(); // 強制從磁碟重讀，避免主 isolate 快取遮蔽背景 isolate 的寫入
     final raw = prefs.getString(_kNotifHistoryKey);
     if (raw == null) return;
     try {
