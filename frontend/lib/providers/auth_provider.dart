@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import '/models/login_models.dart';
 import '/services/api_service.dart';
 import '/services/secure_storage.dart';
@@ -34,6 +35,7 @@ class AuthProvider extends ChangeNotifier {
     // 否則 App 重啟後 ApiService._accessToken 會是 null 導致 401
     if (_token != null && _token!.isNotEmpty) {
       sl<ApiService>().setAccessToken(_token);
+      _registerFcmToken();
     }
     try {
       _uuid = await SecureStorage.readUuid();
@@ -67,6 +69,9 @@ class AuthProvider extends ChangeNotifier {
         username: _username!,
       );
 
+      _registerFcmToken();
+      _loading = false;
+      notifyListeners();
       return null;
     }
 
@@ -85,6 +90,10 @@ class AuthProvider extends ChangeNotifier {
         name: res.name,
         username: res.username,
       );
+
+      // 登入後取得 FCM token 並上傳給後端
+      _registerFcmToken();
+
       return null;
     } catch (e) {
       return e.toString();
@@ -104,4 +113,16 @@ class AuthProvider extends ChangeNotifier {
   }
 
   bool get isLoggedIn => _token?.isNotEmpty == true;
+
+  /// 取得 FCM token 並向後端註冊
+  Future<void> _registerFcmToken() async {
+    try {
+      final fcmToken = await FirebaseMessaging.instance.getToken();
+      if (fcmToken != null && fcmToken.isNotEmpty) {
+        await sl<ApiService>().registerFcmToken(fcmToken);
+      }
+    } catch (e) {
+      debugPrint('[Auth] FCM token register error: $e');
+    }
+  }
 }

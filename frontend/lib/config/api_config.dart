@@ -22,6 +22,8 @@ class ApiConfig {
   static const String statusPath = '/auth/status';
   static const String chatPath = '/api/chat/';
   static const String foodRecognitionPath = '/api/food-recognition/';
+  static const String fraudPath = '/api/fraud/';
+  static const String pushSubscribePath = '/api/push/subscribe/';
   static const String hangupPath = '/api/hangup';
   static const String logoutPath = '/auth/logout';
 

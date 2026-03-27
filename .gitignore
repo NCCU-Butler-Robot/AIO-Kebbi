@@ -1,0 +1,10 @@
+# Personal notes (not tracked)
+NOTES.md
+notes/
+
+.claude
+*.pdf
+
+# Firebase credentials (contains API keys - do not commit)
+google-services.json
+GoogleService-Info.plist

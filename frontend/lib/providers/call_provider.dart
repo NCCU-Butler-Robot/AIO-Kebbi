@@ -156,13 +156,16 @@ class CallProvider extends ChangeNotifier {
     await _ws.sendAudio(bytes);
   }
 
-  Future<void> startMonitoring(
-      {required String token, required String uuid}) async {
+  Future<void> startMonitoring({
+    required String token,
+    required String uuid,
+    String? callToken,
+  }) async {
     if (_monitoring) return;
     _monitoring = true;
     notifyListeners();
 
-    await _ws.connect(token: token, uuid: uuid);
+    await _ws.connect(token: token, uuid: uuid, callToken: callToken);
 
     _eventSub = _ws.events.listen(_onEvent);
     _msgSub = _ws.messages.listen(_onMessage);

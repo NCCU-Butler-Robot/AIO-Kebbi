@@ -15,7 +15,10 @@ import '../providers/auth_provider.dart';
 import 'call_page.dart';
 
 class MonitorPage extends StatefulWidget {
-  const MonitorPage({super.key});
+  /// 從 initiate_socketio 收到的 call_token，有值時自動建立 Socket.IO 連線
+  final String? callToken;
+
+  const MonitorPage({super.key, this.callToken});
 
   @override
   State<MonitorPage> createState() => _MonitorPageState();
@@ -47,6 +50,21 @@ class _MonitorPageState extends State<MonitorPage> {
     _bound = true;
 
     _messenger = ScaffoldMessenger.maybeOf(context);
+
+    // 若帶有 callToken，自動建立 Socket.IO 連線
+    final callToken = widget.callToken;
+    if (callToken != null && callToken.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final cp = context.read<CallProvider>();
+        final auth = context.read<AuthProvider>();
+        final token = auth.token;
+        final uuid = auth.uuid;
+        if (token != null && token.isNotEmpty && uuid != null && uuid.isNotEmpty) {
+          await cp.startMonitoring(token: token, uuid: uuid, callToken: callToken);
+        }
+      });
+    }
 
     // 3-minute decision stream
     _decSub = context.read<CallProvider>().decisions.listen((d) async {
@@ -251,7 +269,9 @@ class _MonitorPageState extends State<MonitorPage> {
                 messenger
                     .showSnackBar(const SnackBar(content: Text('Starting monitoring...')));
 
-                await cp.startMonitoring(token: token, uuid: uuid);
+                await cp.startMonitoring(
+                    token: token, uuid: uuid,
+                    callToken: widget.callToken);
                 await cp.startMicStream();
 
                 await Future.delayed(const Duration(milliseconds: 300));

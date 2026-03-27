@@ -1,13 +1,16 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:pwa_install/pwa_install.dart';
 
 import 'constants.dart';
+import 'di/service_locator.dart';
 import 'providers/auth_provider.dart';
 import 'providers/call_provider.dart';
+import 'services/fcm_service.dart';
+import 'services/kebbi_service.dart';
 import 'widgets/auth_guard.dart';
-import 'di/service_locator.dart';
 
 import 'pages/welcome_page.dart';
 import 'pages/login_page.dart';
@@ -17,18 +20,44 @@ import 'pages/stats_page.dart';
 import 'pages/food_recognition_page.dart';
 import 'pages/butler_chat_page.dart';
 
-import 'services/kebbi_service.dart';
+/// 全域 NavigatorKey — 供 FcmService 在 widget tree 外部導航使用
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Firebase 初始化（FCM 需要）
+  await Firebase.initializeApp();
 
   PWAInstall().setup(installCallback: () {
     debugPrint('APP INSTALLED!');
   });
 
   KebbiService.init();
-  WidgetsFlutterBinding.ensureInitialized();
   setupServiceLocator();
+
+  // FCM 初始化 — 設定 incoming_call 處理
+  FcmService.I.onIncomingCall = (callToken, callerName) {
+    final nav = navigatorKey.currentState;
+    if (nav == null) return;
+
+    // 若目前已在 MonitorPage 就不重複 push
+    nav.pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => MonitorPage(callToken: callToken),
+      ),
+      (route) => route.isFirst, // 保留第一頁（WelcomePage/MenuPage）
+    );
+  };
+
+  // 初始化並取得 FCM token（非同步，不阻擋啟動）
+  FcmService.I.initialize().then((token) {
+    if (token != null) {
+      // token 等到登入後由 AuthProvider 負責送到後端
+      debugPrint('[main] FCM token ready: $token');
+    }
+  });
+
   runApp(
     MultiProvider(
       providers: [
@@ -47,6 +76,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      navigatorKey: navigatorKey,
       title: 'Fraud Detect App',
       theme: ThemeData(
         textTheme: GoogleFonts.itimTextTheme(),

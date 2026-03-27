@@ -1,50 +1,38 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:socket_io_client/socket_io_client.dart' as sio;
 
 import '../config/api_config.dart';
 import '../models/scam_event.dart';
 import '../models/ws_message.dart';
 
 class WebSocketService {
-  WebSocketChannel? _ch;
+  sio.Socket? _socket;
   bool _connected = false;
 
   // streams
   final _scamCtrl = StreamController<ScamEvent>.broadcast();
-  final _msgCtrl  = StreamController<WsMessage>.broadcast();
+  final _msgCtrl = StreamController<WsMessage>.broadcast();
   final _audioCtrl = StreamController<Uint8List>.broadcast();
 
-  Stream<ScamEvent> get events   => _scamCtrl.stream;
+  Stream<ScamEvent> get events => _scamCtrl.stream;
   Stream<WsMessage> get messages => _msgCtrl.stream;
   Stream<Uint8List> get audioFrames => _audioCtrl.stream;
   bool get connected => _connected;
 
-  // heartbeat / reconnect
-  Timer? _heartbeat;
-  Timer? _reconnect;
-  DateTime _lastRx = DateTime.now();
-  final _rng = Random();
-  int _retries = 0;
-  bool _manuallyClosed = false;
-
-  // keep for reconnect
-  String? _pendingToken;
-  String? _pendingUuid;
 
   // =============== CONNECT ===============
-  Future<void> connect({required String token, required String uuid}) async {
+  Future<void> connect({
+    required String token,
+    required String uuid,
+    String? callToken,
+  }) async {
     if (_connected) return;
-    _manuallyClosed = false;
-    _pendingToken = token;
-    _pendingUuid  = uuid;
 
     if (ApiConfig.mockWs) {
-      // --- mock: 播放 assets/mock_seq.json 或 mock_call.json ---
       try {
         final rawSeq = await rootBundle.loadString('assets/mock_seq.json');
         final List seq = json.decode(rawSeq) as List;
@@ -66,137 +54,109 @@ class WebSocketService {
         'client_uuid': uuid,
       }));
       _connected = true;
-      _startHeartbeat();
       return;
     }
 
-    try {
-      final base = Uri.parse(ApiConfig.wsBase);
-      final basePath = base.path.endsWith('/')
-          ? base.path.substring(0, base.path.length - 1)
-          : base.path;
-
-      final bool isEcho = base.host == 'echo.websocket.events';
-      final String path = isEcho ? (basePath.isEmpty ? '/' : basePath)
-                                 : '$basePath/ws/$uuid';
-
-      final uri = Uri(
-        scheme: base.scheme,
-        host: base.host,
-        port: base.hasPort ? base.port : null,
-        path: path,
-        queryParameters: {'token': token},
-      );
-
-      debugPrint('[WS] connecting $uri');
-
-      _ch = WebSocketChannel.connect(uri);
-      _connected = true;
-      _reconnect?.cancel();
-      _retries = 0;
-      _lastRx = DateTime.now();
-      _startHeartbeat();
-
-      _ch!.stream.listen(
-        (data) {
-          _lastRx = DateTime.now();
-          try {
-            if (data is Uint8List) {
-              _audioCtrl.add(data);
-              return;
-            }
-            if (data is List<int>) {
-              final s = utf8.decode(data);
-              final t = s.trimLeft();
-              if (t.isNotEmpty && (t.startsWith('{') || t.startsWith('['))) {
-                final j = json.decode(s) as Map<String, dynamic>;
-                final m = WsMessage.fromJson(j);
-                _msgCtrl.add(m);
-                if (m.type == WsType.fraudAssessment) {
-                  _scamCtrl.add(ScamEvent.fromJson(j));
-                }
-              } else {
-                _audioCtrl.add(Uint8List.fromList(data));
-              }
-              return;
-            }
-            if (data is String) {
-              final t = data.trimLeft();
-              if (t.isEmpty || !(t.startsWith('{') || t.startsWith('['))) {
-                debugPrint('[WS] <= (text) $data');
-                return;
-              }
-              final j = json.decode(data) as Map<String, dynamic>;
-              final m = WsMessage.fromJson(j);
-              _msgCtrl.add(m);
-              if (m.type == WsType.fraudAssessment) {
-                _scamCtrl.add(ScamEvent.fromJson(j));
-              }
-              return;
-            }
-            if (data is Map) {
-              final j = Map<String, dynamic>.from(data);
-              final m = WsMessage.fromJson(j);
-              _msgCtrl.add(m);
-              if (m.type == WsType.fraudAssessment) {
-                _scamCtrl.add(ScamEvent.fromJson(j));
-              }
-              return;
-            }
-          } catch (_) {}
-        },
-        onError: (e, st) {
-          _msgCtrl.add(WsMessage.fromJson({'type': 'error', 'error': e.toString()}));
-          _onClosed();
-        },
-        onDone: _onClosed,
-        cancelOnError: true,
-      );
-    } catch (_) {
-      await disconnect();
+    // Socket.IO auth — 後端需要 access_token + call_token
+    final auth = <String, dynamic>{'access_token': token};
+    if (callToken != null && callToken.isNotEmpty) {
+      auth['call_token'] = callToken;
     }
-  }
 
-  void _onClosed() {
-    _stopHeartbeat();
-    try {
-      _ch?.sink.close();
-    } catch (_) {}
-    _ch = null;
-    _connected = false;
-    _scheduleReconnect();
+    _socket = sio.io(
+      ApiConfig.socketBaseUrl,
+      sio.OptionBuilder()
+          .setTransports(['websocket'])
+          .setAuth(auth)
+          .disableAutoConnect()
+          .setTimeout(10000)
+          .setReconnectionDelay(1000)
+          .setReconnectionDelayMax(30000)
+          .setReconnectionAttempts(5)
+          .build(),
+    );
+
+    _socket!.onConnect((_) {
+      _connected = true;
+      debugPrint('[SIO] connected, id=${_socket?.id}');
+      _msgCtrl.add(WsMessage.fromJson({
+        'type': 'connection_success',
+        'connection_id': _socket?.id ?? '',
+        'client_uuid': uuid,
+      }));
+    });
+
+    _socket!.onConnectError((err) {
+      debugPrint('[SIO] connect error: $err');
+      _connected = false;
+      _msgCtrl.add(WsMessage.fromJson({
+        'type': 'error',
+        'error': 'Connection failed: $err',
+      }));
+    });
+
+    _socket!.onDisconnect((reason) {
+      debugPrint('[SIO] disconnected: $reason');
+      _connected = false;
+    });
+
+    _socket!.onError((err) {
+      debugPrint('[SIO] error: $err');
+      _msgCtrl.add(WsMessage.fromJson({
+        'type': 'error',
+        'error': err.toString(),
+      }));
+    });
+
+    // 音訊轉發 — 後端 emit("audio_chunk", {"metadata": ..., "chunk": ...})
+    _socket!.on('audio_chunk', (data) {
+      try {
+        if (data is Map) {
+          final chunk = data['chunk'];
+          if (chunk is List<int>) {
+            _audioCtrl.add(Uint8List.fromList(chunk));
+          } else if (chunk is Uint8List) {
+            _audioCtrl.add(chunk);
+          }
+        }
+      } catch (e) {
+        debugPrint('[SIO] audio_chunk parse error: $e');
+      }
+    });
+
+    _socket!.connect();
   }
 
   // =============== SEND ===============
   void send(String data) {
-    if (_ch == null) {
-      debugPrint('[WS] send skipped: not connected');
-      return;
-    }
-    _ch!.sink.add(data);
+    _socket?.emit('message', data);
   }
 
-  void sendJson(Object data) => send(jsonEncode(data));
+  void sendJson(Object data) {
+    _socket?.emit('message', data);
+  }
 
   Future<void> sendMessage(Map<String, dynamic> data) async {
-    sendJson(data);
+    final type = data['type']?.toString() ?? 'message';
+    _socket?.emit(type, data);
   }
 
+  /// 傳送音訊至對方
+  /// 後端 handler: handle_audio_chunk(sid, metadata, chunk)
   Future<void> sendAudio(Uint8List bytes) async {
     try {
-      _ch?.sink.add(bytes);
+      _socket?.emit('audio_chunk', [
+        {'timestamp': DateTime.now().millisecondsSinceEpoch},
+        bytes,
+      ]);
     } catch (_) {}
   }
 
   // =============== LIFECYCLE ===============
   Future<void> disconnect() async {
-    _manuallyClosed = true;
-    _reconnect?.cancel();
-    _stopHeartbeat();
-    try {
-      await _ch?.sink.close();
-    } catch (_) {}
-    _ch = null;
+    _socket?.disconnect();
+    _socket?.dispose();
+    _socket = null;
     _connected = false;
   }
 
@@ -205,43 +165,5 @@ class WebSocketService {
     await _scamCtrl.close();
     await _msgCtrl.close();
     await _audioCtrl.close();
-  }
-
-  // =============== HEARTBEAT / RECONNECT ===============
-  void _startHeartbeat() {
-    _heartbeat?.cancel();
-    _heartbeat = Timer.periodic(const Duration(seconds: 15), (_) {
-      final since = DateTime.now().difference(_lastRx);
-      if (since > const Duration(seconds: 45)) {
-        _onClosed();
-        return;
-      }
-      try {
-        _ch?.sink.add(jsonEncode({'type': 'ping'}));
-      } catch (_) {}
-    });
-  }
-
-  void _stopHeartbeat() {
-    _heartbeat?.cancel();
-    _heartbeat = null;
-  }
-
-  void _scheduleReconnect() {
-    _reconnect?.cancel();
-    if (_manuallyClosed || ApiConfig.mockWs) return;
-
-    final exp = _retries.clamp(0, 4);
-    final backoff = min(30, 1 << exp);
-    final jitterMs = _rng.nextInt(500);
-    final delay = Duration(seconds: backoff) + Duration(milliseconds: jitterMs);
-
-    _reconnect = Timer(delay, () async {
-      _retries++;
-      final t = _pendingToken, u = _pendingUuid;
-      if (t != null && u != null) {
-        await connect(token: t, uuid: u);
-      }
-    });
   }
 }

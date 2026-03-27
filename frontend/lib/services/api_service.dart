@@ -1,12 +1,12 @@
 // lib/services/api_service.dart
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../config/api_config.dart';
+import '../models/fraud_models.dart';
 import '../models/login_models.dart';
 
 class ChatResult {
@@ -163,6 +163,44 @@ class ApiService {
       conversationId: json['conversation_id'] as String? ?? '',
       messageId: json['message_id'] as String? ?? '',
     );
+  }
+
+  /// 詐騙偵測對話：傳文字 → 回傳 AI 回覆 + SSCI 分數
+  Future<FraudResult> sendFraud({
+    required String prompt,
+    required String phoneNumber,
+    bool isFirst = false,
+  }) async {
+    final resp = await _dio.post(
+      '${ApiConfig.fraudPath}?text_only=true',
+      data: {
+        'prompt': prompt,
+        'phone_number': phoneNumber,
+        'initiate_conversation': isFirst,
+      },
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception('Fraud chat failed (${resp.statusCode})');
+    }
+
+    return FraudResult.fromJson(resp.data as Map<String, dynamic>);
+  }
+
+  /// FCM token 註冊：登入後呼叫，讓後端可以發推播
+  Future<void> registerFcmToken(String fcmToken) async {
+    try {
+      await _dio.post(
+        ApiConfig.pushSubscribePath,
+        data: {
+          'platform': 'fcm',
+          'fcm_token': fcmToken,
+        },
+      );
+      debugPrint('[API] FCM token registered');
+    } catch (e) {
+      debugPrint('[API] FCM token registration failed: $e');
+    }
   }
 
   /// Food recognition：上傳圖片 → 回傳 detect_url
