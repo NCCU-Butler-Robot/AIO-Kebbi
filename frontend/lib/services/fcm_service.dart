@@ -1,10 +1,25 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-/// 背景訊息 handler — 必須是 top-level function
+const _kNotifTitle = 'fcm_notif_title';
+const _kNotifBody = 'fcm_notif_body';
+const _kNotifCallToken = 'fcm_notif_call_token';
+const _kNotifCallerName = 'fcm_notif_caller_name';
+
+/// 背景訊息 handler — 必須是 top-level function，跑在獨立 isolate
 @pragma('vm:entry-point')
 Future<void> _backgroundMessageHandler(RemoteMessage message) async {
   debugPrint('[FCM] Background message: ${message.data}');
+  final data = message.data;
+  if (data['type'] == 'incoming_call') {
+    // 用 SharedPreferences 跨 isolate 持久化，讓 foreground 恢復後能讀到
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kNotifTitle, message.notification?.title ?? '來電通知');
+    await prefs.setString(_kNotifBody, message.notification?.body ?? '');
+    await prefs.setString(_kNotifCallToken, data['call_token'] ?? '');
+    await prefs.setString(_kNotifCallerName, data['caller_name'] ?? '');
+  }
 }
 
 /// 最新一筆 FCM 通知資料
@@ -43,7 +58,10 @@ class FcmService {
     );
     debugPrint('[FCM] Permission: ${settings.authorizationStatus}');
 
-    // 前台收到：只存資料，不跳轉
+    // App 啟動時從 SharedPreferences 恢復背景收到的通知
+    await _loadPersistedNotif();
+
+    // 前台收到：存資料，不跳轉
     FirebaseMessaging.onMessage.listen(_storeMessage);
 
     // 背景 → 用戶點通知：存資料 + 跳轉
@@ -64,27 +82,49 @@ class FcmService {
     return token;
   }
 
+  /// 從 SharedPreferences 讀取背景 isolate 寫入的通知資料
+  Future<void> _loadPersistedNotif() async {
+    final prefs = await SharedPreferences.getInstance();
+    final callToken = prefs.getString(_kNotifCallToken);
+    if (callToken != null && callToken.isNotEmpty) {
+      latestNotif.value = FcmNotifData(
+        title: prefs.getString(_kNotifTitle),
+        body: prefs.getString(_kNotifBody),
+        callToken: callToken,
+        callerName: prefs.getString(_kNotifCallerName),
+      );
+    }
+  }
+
   void Function(String newToken)? _onTokenRefreshed;
 
   void setTokenRefreshCallback(void Function(String) cb) {
     _onTokenRefreshed = cb;
   }
 
-  void _storeMessage(RemoteMessage message) {
+  Future<void> _storeMessage(RemoteMessage message) async {
     debugPrint('[FCM] Message received: ${message.data}');
     final data = message.data;
     if (data['type'] == 'incoming_call') {
-      latestNotif.value = FcmNotifData(
+      final notif = FcmNotifData(
         title: message.notification?.title,
         body: message.notification?.body,
         callToken: data['call_token'] as String?,
         callerName: data['caller_name'] as String?,
       );
+      latestNotif.value = notif;
+
+      // 同步寫入 SharedPreferences 確保持久化
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kNotifTitle, notif.title ?? '');
+      await prefs.setString(_kNotifBody, notif.body ?? '');
+      await prefs.setString(_kNotifCallToken, notif.callToken ?? '');
+      await prefs.setString(_kNotifCallerName, notif.callerName ?? '');
     }
   }
 
-  void _storeAndNavigate(RemoteMessage message) {
-    _storeMessage(message);
+  Future<void> _storeAndNavigate(RemoteMessage message) async {
+    await _storeMessage(message);
     final data = message.data;
     if (data['type'] == 'incoming_call') {
       final callToken = data['call_token'] as String? ?? '';
