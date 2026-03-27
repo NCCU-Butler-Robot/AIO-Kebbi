@@ -1,11 +1,10 @@
+import 'dart:convert';
+
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const _kNotifTitle = 'fcm_notif_title';
-const _kNotifBody = 'fcm_notif_body';
-const _kNotifCallToken = 'fcm_notif_call_token';
-const _kNotifCallerName = 'fcm_notif_caller_name';
+const _kNotifHistoryKey = 'fcm_notif_history';
 
 /// 背景訊息 handler — 必須是 top-level function，跑在獨立 isolate
 @pragma('vm:entry-point')
@@ -13,42 +12,55 @@ Future<void> _backgroundMessageHandler(RemoteMessage message) async {
   debugPrint('[FCM] Background message: ${message.data}');
   final data = message.data;
   if (data['type'] == 'incoming_call') {
-    // 用 SharedPreferences 跨 isolate 持久化，讓 foreground 恢復後能讀到
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kNotifTitle, message.notification?.title ?? '來電通知');
-    await prefs.setString(_kNotifBody, message.notification?.body ?? '');
-    await prefs.setString(_kNotifCallToken, data['call_token'] ?? '');
-    await prefs.setString(_kNotifCallerName, data['caller_name'] ?? '');
+    final existing = prefs.getString(_kNotifHistoryKey);
+    final List<dynamic> history = existing != null ? jsonDecode(existing) : [];
+    history.add({
+      'title': message.notification?.title,
+      'body': message.notification?.body,
+      'data': data,
+    });
+    await prefs.setString(_kNotifHistoryKey, jsonEncode(history));
   }
 }
 
-/// 最新一筆 FCM 通知資料
+/// FCM 通知資料（含完整 data map）
 class FcmNotifData {
   final String? title;
   final String? body;
-  final String? callToken;
-  final String? callerName;
+  final Map<String, dynamic> data;
 
-  const FcmNotifData({
-    this.title,
-    this.body,
-    this.callToken,
-    this.callerName,
-  });
+  const FcmNotifData({this.title, this.body, required this.data});
+
+  Map<String, dynamic> toJson() => {
+        'title': title,
+        'body': body,
+        'data': data,
+      };
+
+  factory FcmNotifData.fromJson(Map<String, dynamic> json) => FcmNotifData(
+        title: json['title'] as String?,
+        body: json['body'] as String?,
+        data: Map<String, dynamic>.from(json['data'] as Map? ?? {}),
+      );
 }
 
-class FcmService {
+class FcmService with WidgetsBindingObserver {
   FcmService._();
   static final FcmService I = FcmService._();
 
-  /// 最新通知資料（供 MonitorPage 等 UI 監聽）
-  final ValueNotifier<FcmNotifData?> latestNotif = ValueNotifier(null);
+  /// 所有歷史通知（最新在最後）
+  final ValueNotifier<List<FcmNotifData>> notifHistory =
+      ValueNotifier(const []);
 
   /// 用戶點通知後的 callback → (callToken, callerName)
   void Function(String callToken, String callerName)? onIncomingCall;
 
   Future<String?> initialize() async {
     FirebaseMessaging.onBackgroundMessage(_backgroundMessageHandler);
+
+    // 監聽 App 生命週期，恢復前台時補讀 SharedPreferences
+    WidgetsBinding.instance.addObserver(this);
 
     final settings = await FirebaseMessaging.instance.requestPermission(
       alert: true,
@@ -58,16 +70,16 @@ class FcmService {
     );
     debugPrint('[FCM] Permission: ${settings.authorizationStatus}');
 
-    // App 啟動時從 SharedPreferences 恢復背景收到的通知
+    // 啟動時讀取歷史
     await loadPersistedNotif();
 
-    // 前台收到：存資料，不跳轉
+    // 前台收到：加入歷史，不跳轉
     FirebaseMessaging.onMessage.listen(_storeMessage);
 
-    // 背景 → 用戶點通知：存資料 + 跳轉
+    // 背景 → 用戶點通知：加入歷史 + 跳轉
     FirebaseMessaging.onMessageOpenedApp.listen(_storeAndNavigate);
 
-    // App 終止 → 點通知啟動：存資料 + 跳轉
+    // App 終止 → 點通知啟動：加入歷史 + 跳轉
     final initial = await FirebaseMessaging.instance.getInitialMessage();
     if (initial != null) _storeAndNavigate(initial);
 
@@ -82,17 +94,27 @@ class FcmService {
     return token;
   }
 
-  /// 從 SharedPreferences 讀取背景 isolate 寫入的通知資料（可從外部呼叫）
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // App 從背景恢復時，補讀背景 isolate 寫入的通知
+      loadPersistedNotif();
+    }
+  }
+
+  /// 從 SharedPreferences 讀取歷史通知並更新 notifHistory
   Future<void> loadPersistedNotif() async {
     final prefs = await SharedPreferences.getInstance();
-    final callToken = prefs.getString(_kNotifCallToken);
-    if (callToken != null && callToken.isNotEmpty) {
-      latestNotif.value = FcmNotifData(
-        title: prefs.getString(_kNotifTitle),
-        body: prefs.getString(_kNotifBody),
-        callToken: callToken,
-        callerName: prefs.getString(_kNotifCallerName),
-      );
+    final raw = prefs.getString(_kNotifHistoryKey);
+    if (raw == null) return;
+    try {
+      final List<dynamic> list = jsonDecode(raw);
+      final parsed = list
+          .map((e) => FcmNotifData.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      notifHistory.value = parsed;
+    } catch (e) {
+      debugPrint('[FCM] Failed to parse notif history: $e');
     }
   }
 
@@ -109,17 +131,17 @@ class FcmService {
       final notif = FcmNotifData(
         title: message.notification?.title,
         body: message.notification?.body,
-        callToken: data['call_token'] as String?,
-        callerName: data['caller_name'] as String?,
+        data: data,
       );
-      latestNotif.value = notif;
+      final updated = [...notifHistory.value, notif];
+      notifHistory.value = updated;
 
-      // 同步寫入 SharedPreferences 確保持久化
+      // 同步寫入 SharedPreferences
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_kNotifTitle, notif.title ?? '');
-      await prefs.setString(_kNotifBody, notif.body ?? '');
-      await prefs.setString(_kNotifCallToken, notif.callToken ?? '');
-      await prefs.setString(_kNotifCallerName, notif.callerName ?? '');
+      await prefs.setString(
+        _kNotifHistoryKey,
+        jsonEncode(updated.map((e) => e.toJson()).toList()),
+      );
     }
   }
 

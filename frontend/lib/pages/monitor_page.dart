@@ -129,49 +129,75 @@ class _MonitorPageState extends State<MonitorPage> {
   }
 
   Widget _buildFcmNotifCard() {
-    return ValueListenableBuilder<FcmNotifData?>(
-      valueListenable: FcmService.I.latestNotif,
-      builder: (_, notif, __) {
-        if (notif == null) return const SizedBox.shrink();
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: const Color(0xffe8f4fd),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xff90caf9)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.notifications_active, size: 18, color: Color(0xff1565c0)),
-                  const SizedBox(width: 8),
-                  Text(
-                    notif.title ?? '來電通知',
-                    style: GoogleFonts.itim(
-                        fontSize: 15, fontWeight: FontWeight.w600, color: const Color(0xff1565c0)),
-                  ),
-                ],
-              ),
-              if (notif.body != null) ...[
-                const SizedBox(height: 4),
-                Text(notif.body!,
-                    style: GoogleFonts.itim(fontSize: 14, color: const Color(0xff1a237e))),
-              ],
-              const SizedBox(height: 6),
-              if (notif.callerName != null)
-                Text('caller_name: ${notif.callerName}',
-                    style: GoogleFonts.itim(fontSize: 12, color: Colors.grey.shade700)),
-              if (notif.callToken != null)
-                Text('call_token: ${notif.callToken}',
-                    style: GoogleFonts.itim(fontSize: 12, color: Colors.grey.shade700)),
-            ],
-          ),
+    return ValueListenableBuilder<List<FcmNotifData>>(
+      valueListenable: FcmService.I.notifHistory,
+      builder: (_, history, __) {
+        if (history.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('推播通知紀錄 (${history.length})',
+                style: GoogleFonts.itim(fontSize: 14, color: Colors.grey.shade600)),
+            const SizedBox(height: 6),
+            ...history.reversed.map(_buildSingleNotif),
+            const SizedBox(height: 6),
+          ],
         );
       },
+    );
+  }
+
+  Widget _buildSingleNotif(FcmNotifData notif) {
+    final encoder = const JsonEncoder.withIndent('  ');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xffe8f4fd),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xff90caf9)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.notifications_active, size: 16, color: Color(0xff1565c0)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  notif.title ?? '來電通知',
+                  style: GoogleFonts.itim(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xff1565c0)),
+                ),
+              ),
+            ],
+          ),
+          if (notif.body != null && notif.body!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(notif.body!,
+                style: GoogleFonts.itim(fontSize: 13, color: const Color(0xff1a237e))),
+          ],
+          const SizedBox(height: 6),
+          Text('data:',
+              style: GoogleFonts.itim(fontSize: 12, color: Colors.grey.shade600)),
+          const SizedBox(height: 2),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xfff0f4f8),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              encoder.convert(notif.data),
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
