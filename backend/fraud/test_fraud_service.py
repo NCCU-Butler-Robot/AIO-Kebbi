@@ -283,6 +283,107 @@ async def test_edge_cases(client: httpx.AsyncClient, access_token: str):
         print(f"❌ 應該拒絕無效電話號碼，但回傳: {response.status_code}")
 
 
+# ========== SSCI 單元測試 ==========
+
+def test_ssci_new_fields():
+    """測試 SSCI 新增的 decision_label 和 scam_probability 欄位"""
+    import sys
+    import os
+    # Add the fraud service source to the path for direct import
+    fraud_src = os.path.join(os.path.dirname(__file__), "src")
+    if fraud_src not in sys.path:
+        sys.path.insert(0, os.path.dirname(__file__))
+
+    from src.main import _compute_ssci, _build_ssci_payload, _build_ssci_headers
+
+    print_section("SSCI 單元測試：新欄位驗證")
+    passed = 0
+    failed = 0
+
+    # --- Case 1: 全部判斷為 True（詐騙） ---
+    print("\n🧪 Case 1: 全部 trigger 為 True（詐騙）")
+    result = _compute_ssci([True])
+    assert result is not None, "result should not be None"
+
+    assert result["decision_label"] == "scam", f"Expected 'scam', got '{result['decision_label']}'"
+    assert result["scam_probability"] == result["confidence"], (
+        f"When scam, scam_probability should == confidence, got {result['scam_probability']} vs {result['confidence']}"
+    )
+    assert "confidence" in result, "Old 'confidence' field should still exist"
+    print(f"  ✅ decision_label={result['decision_label']}, "
+          f"confidence={result['confidence']:.4f}, "
+          f"scam_probability={result['scam_probability']:.4f}")
+    passed += 1
+
+    # --- Case 2: 全部判斷為 False（非詐騙） ---
+    print("\n🧪 Case 2: 全部 trigger 為 False（非詐騙）")
+    result = _compute_ssci([False])
+    assert result is not None
+
+    assert result["decision_label"] == "normal", f"Expected 'normal', got '{result['decision_label']}'"
+    expected_scam_prob = 1.0 - result["confidence"]
+    assert abs(result["scam_probability"] - expected_scam_prob) < 1e-9, (
+        f"When normal, scam_probability should == 1-confidence, got {result['scam_probability']} vs {expected_scam_prob}"
+    )
+    print(f"  ✅ decision_label={result['decision_label']}, "
+          f"confidence={result['confidence']:.4f}, "
+          f"scam_probability={result['scam_probability']:.4f}")
+    passed += 1
+
+    # --- Case 3: 多輪判斷，最後為 True ---
+    print("\n🧪 Case 3: 多輪判斷 [False, True, True]，最後為 True")
+    result = _compute_ssci([False, True, True])
+    assert result["decision_label"] == "scam"
+    assert result["scam_probability"] == result["confidence"]
+    print(f"  ✅ decision_label={result['decision_label']}, "
+          f"scam_probability={result['scam_probability']:.4f}")
+    passed += 1
+
+    # --- Case 4: 多輪判斷，最後為 False ---
+    print("\n🧪 Case 4: 多輪判斷 [True, True, False]，最後為 False")
+    result = _compute_ssci([True, True, False])
+    assert result["decision_label"] == "normal"
+    assert abs(result["scam_probability"] - (1.0 - result["confidence"])) < 1e-9
+    print(f"  ✅ decision_label={result['decision_label']}, "
+          f"scam_probability={result['scam_probability']:.4f}")
+    passed += 1
+
+    # --- Case 5: _build_ssci_payload 傳遞新欄位 ---
+    print("\n🧪 Case 5: _build_ssci_payload 包含新欄位")
+    # 3 raw results -> 1 trigger
+    payload = _build_ssci_payload([True, False, True], updated=True)
+    assert payload.get("available") == True
+    assert "decision_label" in payload, "payload should contain 'decision_label'"
+    assert "scam_probability" in payload, "payload should contain 'scam_probability'"
+    print(f"  ✅ payload decision_label={payload['decision_label']}, "
+          f"scam_probability={payload['scam_probability']:.4f}")
+    passed += 1
+
+    # --- Case 6: _build_ssci_headers 包含新 headers ---
+    print("\n🧪 Case 6: _build_ssci_headers 包含新 headers")
+    headers = _build_ssci_headers(payload)
+    assert "X-SSCI-Decision-Label" in headers, "Missing X-SSCI-Decision-Label header"
+    assert "X-SSCI-Scam-Probability" in headers, "Missing X-SSCI-Scam-Probability header"
+    assert "X-SSCI-Confidence" in headers, "Old X-SSCI-Confidence header should still exist"
+    print(f"  ✅ X-SSCI-Decision-Label={headers['X-SSCI-Decision-Label']}, "
+          f"X-SSCI-Scam-Probability={headers['X-SSCI-Scam-Probability']}")
+    passed += 1
+
+    # --- Case 7: SSCI 不可用時不應有新欄位 ---
+    print("\n🧪 Case 7: SSCI 不可用時 payload 不含新欄位")
+    payload_empty = _build_ssci_payload([], updated=False)
+    assert payload_empty.get("available") == False
+    assert "decision_label" not in payload_empty
+    assert "scam_probability" not in payload_empty
+    print(f"  ✅ 空 payload 正確，available=False")
+    passed += 1
+
+    print(f"\n{'=' * 50}")
+    print(f"  SSCI 單元測試結果：{passed} passed, {failed} failed")
+    print(f"{'=' * 50}")
+    return failed == 0
+
+
 # ========== 主程式 ==========
 
 async def main():
