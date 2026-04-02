@@ -29,31 +29,39 @@ flowchart TB
 
     FE[Flutter Frontend<br/>Android / iOS / Web<br/><br/>登入 / 通話監控 / 管家對話 / 食物辨識 / 統計分析 / 推播通知]
 
-    N[Nginx<br/>Port 8100<br/>Reverse Proxy / API Gateway / JWT 驗證]
+    N[Nginx<br/>Reverse Proxy / API Gateway / JWT 驗證]
 
-    A[Auth Service]
-    C[Chat Service]
-    F[Fraud Service]
-    P[Push Notification Service]
+    A[Auth Service<br/>/auth/*]
+    W[www<br/>/web/]
+    C[Chat Service<br/>/api/chat/*]
+    FR[Food Recognition<br/>/api/food-recognition/*]
+    F[Fraud Service<br/>/api/fraud/*]
+    P[Push Notification<br/>/api/push/*]
+    S[socket_gateway<br/>/socket.io/*]
 
-    DB[(PostgreSQL<br/>Port 5432<br/>用戶資料 / 認證令牌 / 對話歷史 / 推播訂閱)]
+    DB[(PostgreSQL<br/>用戶資料 / 認證令牌 / 對話歷史 / 推播訂閱)]
 
-    R[(Redis<br/>Port 6379<br/>Session / 即時事件 / 快取)]
+    R[(Redis<br/>Session / Cache / Stream)]
 
     FE --> N
 
-    N --> A
-    N --> C
-    N --> F
-    N --> P
+    N -.->|" /web/ "| W
+    N -.->|" /auth/* "| A
+    N -.->|" /api/chat/* "| C
+    N -.->|" /api/food-recognition/* "| FR
+    N -.->|" /api/fraud/* "| F
+    N -.->|" /api/push/* "| P
+    N -.->|" /socket.io/* "| S
 
     A --> DB
     C --> DB
+    FR --> DB
     F --> DB
     P --> DB
 
-    F --> R
-    P --> R
+    F -.->|xadd| R
+    R -.->|xread| P
+    P -.->|FCM| FE
 ```
 
 ---
@@ -155,7 +163,7 @@ frontend/lib/
 | `/auth/*` | auth 服務 | 否 |
 | `/api/chat/*` | chat 服務 | JWT |
 | `/api/fraud/*` | fraud 服務 | JWT |
-| `/api/food-recognition/*` | chat 服務 | JWT |
+| `/api/food-recognition/*` | food_detect 服務 | JWT |
 | `/api/push/*` | push_notification 服務 | JWT |
 | `/socket.io/*` | socket_gateway | WebSocket |
 

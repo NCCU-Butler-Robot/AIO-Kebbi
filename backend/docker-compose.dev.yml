@@ -68,10 +68,15 @@ services:
     # ports:
     #   - "5000"
     # Add other configurations as needed
-  # food_detect:
-  #   build:
-  #     context: ./food_detect
-  #     dockerfile: Dockerfile
+  food_detect:
+    build:
+      context: ./food_detect
+      dockerfile: Dockerfile
+      args:
+        - NONROOT_USERNAME=ubuntu
+        - PROJECT_PATH=/project/food_detect
+    volumes:
+      - ./food_detect/:/project/food_detect/
   #   # Add other configurations as needed
   tts:
     build:

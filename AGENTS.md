@@ -87,7 +87,7 @@ GIT_AUTH_TOKEN=
 ```
 
 The `push_notification` service also requires a Firebase credentials file at:
-`backend/secrets/aio-kebbi-firebase-adminsdk-fbsvc-0d7dde61d4.json`
+`backend/secrets/firebase-key.json`
 
 ### Backend Package Management
 

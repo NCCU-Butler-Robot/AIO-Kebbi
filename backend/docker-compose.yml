@@ -124,10 +124,16 @@ services:
     # ports:
     #   - "5000"
     # Add other configurations as needed
-  # food_detect:
-  #   build:
-  #     context: ./food_detect
-  #     dockerfile: Dockerfile
+  food_detect:
+    build:
+      context: ./food_detect
+      dockerfile: Dockerfile
+      args:
+        - NONROOT_USERNAME=ubuntu
+        - PROJECT_PATH=/project/food_detect
+    depends_on:
+      db:
+        condition: service_healthy
   #   # Add other configurations as needed
   # tts:
   #   build:
@@ -198,4 +204,4 @@ secrets:
   GIT_AUTH_TOKEN:
     environment: GIT_AUTH_TOKEN
   FCM_CREDENTIALS:
-    file: ./secrets/aio-kebbi-firebase-adminsdk-fbsvc-0d7dde61d4.json
+    file: ./secrets/firebase-key.json
