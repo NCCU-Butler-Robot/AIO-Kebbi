@@ -16,7 +16,7 @@ let audioContext = null;
 let mediaStream = null;
 let analyser = null;
 let silenceThreshold = 30;
-let silenceDelay = 1500;
+let silenceDelay = 0; // 1500;
 let currentAudio = null;
 
 // PCM streaming

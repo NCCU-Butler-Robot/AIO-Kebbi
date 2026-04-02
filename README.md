@@ -31,13 +31,13 @@ flowchart TB
 
     N[Nginx<br/>Reverse Proxy / API Gateway / JWT 驗證]
 
-    A[Auth Service<br/>/auth/*]
-    W[www<br/>/web/]
-    C[Chat Service<br/>/api/chat/*]
-    FR[Food Recognition<br/>/api/food-recognition/*]
-    F[Fraud Service<br/>/api/fraud/*]
-    P[Push Notification<br/>/api/push/*]
-    S[socket_gateway<br/>/socket.io/*]
+    A[Auth Service<br/>/auth/login<br/>/auth/register<br/>/auth/refresh_token<br/>/auth/logout<br/>/auth/validate]
+    W[www<br/>/web/<br/>/web/login<br/>/web/register<br/>/web/call]
+    C[Chat Service<br/>/api/chat/]
+    FR[Food Recognition<br/>/api/food-recognition/]
+    F[Fraud Service<br/>/api/fraud/]
+    P[Push Notification<br/>/api/push/subscribe/<br/>/notify /notify/user]
+    S[socket_gateway<br/>/socket.io/]
 
     DB[(PostgreSQL<br/>用戶資料 / 認證令牌 / 對話歷史 / 推播訂閱)]
 
@@ -45,13 +45,13 @@ flowchart TB
 
     FE --> N
 
-    N -.->|" /web/ "| W
-    N -.->|" /auth/* "| A
-    N -.->|" /api/chat/* "| C
-    N -.->|" /api/food-recognition/* "| FR
-    N -.->|" /api/fraud/* "| F
-    N -.->|" /api/push/* "| P
-    N -.->|" /socket.io/* "| S
+    N -.->|"/web/*"| W
+    N -.->|"/auth/*"| A
+    N -.->|"/api/chat/*"| C
+    N -.->|"/api/food-recognition/*"| FR
+    N -.->|"/api/fraud/*"| F
+    N -.->|"/api/push/*"| P
+    N -.->|"/socket.io/*"| S
 
     A --> DB
     C --> DB

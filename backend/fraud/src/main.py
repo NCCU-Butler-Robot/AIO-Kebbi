@@ -146,6 +146,8 @@ def _compute_ssci(trigger_results: list[bool]) -> dict[str, Any] | None:
         "rho_k": rho_k,
         "c_k": c_k,
         "confidence": confidence,
+        "decision_label": "scam" if y_k else "normal",
+        "scam_probability": confidence if y_k else (1.0 - confidence),
     }
 
 
@@ -189,6 +191,8 @@ def _build_ssci_headers(ssci_payload: dict[str, Any]) -> dict[str, str]:
                 "X-SSCI-Latest-Decision": str(
                     bool(ssci_payload.get("latest_trigger_decision", False))
                 ).lower(),
+                "X-SSCI-Decision-Label": str(ssci_payload.get('decision_label', 'unknown')),
+                "X-SSCI-Scam-Probability": f"{float(ssci_payload.get('scam_probability', 0.0)):.6f}",
             }
         )
 
@@ -593,18 +597,18 @@ async def fraud_chat_message(
         conversation, x_user_id, target_user, max_duration=180
     )
     if not in_time_limit:
-        # 超過3分鐘後，改為以 SSCI confidence 判斷
+        # 超過3分鐘後，改為以 SSCI scam_probability 判斷
         if ssci_payload.get("available"):
-            ssci_confidence = float(ssci_payload.get("confidence", 0.0))
-            is_scam_by_ssci = ssci_confidence > SSCI_SCAM_THRESHOLD
+            scam_prob = float(ssci_payload.get("scam_probability", 0.0))
+            is_scam_by_ssci = scam_prob > SSCI_SCAM_THRESHOLD
 
             print(
-                f"[INFO] Conversation {conversation_id} - SSCI confidence: {ssci_confidence:.6f}, threshold: {SSCI_SCAM_THRESHOLD:.2f}, scam={is_scam_by_ssci}"
+                f"[INFO] Conversation {conversation_id} - SSCI scam_probability: {scam_prob:.6f}, threshold: {SSCI_SCAM_THRESHOLD:.2f}, scam={is_scam_by_ssci}"
             )
 
             if not is_scam_by_ssci:
                 print(
-                    "[INFO] SSCI indicates normal conversation (confidence <= threshold). Notifying real user to take over."
+                    "[INFO] SSCI indicates normal conversation (scam_probability <= threshold). Notifying real user to take over."
                 )
                 call_token = await database.set_call_token(
                     x_user_id, target_id, expiration_seconds=300
@@ -628,7 +632,7 @@ async def fraud_chat_message(
                 }
             else:
                 print(
-                    "[INFO] SSCI indicates potential scam (confidence > threshold). Continuing AI conversation."
+                    "[INFO] SSCI indicates potential scam (scam_probability > threshold). Continuing AI conversation."
                 )
                 # 繼續處理，返回正常的音頻響應
         else:

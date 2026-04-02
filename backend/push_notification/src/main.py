@@ -211,6 +211,15 @@ async def subscribe(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/push/vapid_public_key")
+async def get_vapid_public_key():
+    """Return VAPID public key for Web Push subscription."""
+    public_key = os.getenv("VAPID_PUBLIC_KEY")
+    if not public_key:
+        raise HTTPException(status_code=500, detail="VAPID public key not configured")
+    return {"public_key": public_key}
+
+
 @app.post("/notify")
 async def notify_all(payload: NotificationPayload):
     """Send a push notification to all users. Payload example: { "title": "System Alert", "body": "New update available.", "icon": "/static/icons/alert.png", "tag": "web-push", "data": { "url": "/updates" } }"""
@@ -294,16 +303,31 @@ async def send_push(subscription, payload):
             return True
         except WebPushException as ex:
             # Check if subscription is gone or unsubscribed
-            print("ERROR", ex, type(ex))
+            print("ERROR WebPushException:", ex, type(ex))
             print("response", ex.response)
-            print("status code", ex.response.status_code, type(ex.response.status_code))
-            if ex.response is not None and ex.response.status_code == 410:
-                print("Subscription is gone")
-                # Remove subscription from database
+
+            # Invalid p256dh key - remove subscription
+            if "Invalid p256dh key" in str(ex):
+                print("Invalid p256dh key, removing subscription")
                 await database.delete_subscription(endpoint, platform)
-                print(f"Removed expired subscription: {endpoint}")
+                return False
+
+            if ex.response is not None:
+                print(
+                    "status code",
+                    ex.response.status_code,
+                    type(ex.response.status_code),
+                )
+                # Permanent failures - remove subscription
+                if ex.response.status_code in [410, 404]:
+                    print("Subscription is gone/invalid, removing")
+                    await database.delete_subscription(endpoint, platform)
+                    print(f"Removed expired subscription: {endpoint}")
+                else:
+                    print(f"Push failed for {endpoint}: {ex}")
             else:
-                print(f"Push failed for {endpoint}: {ex}")
+                # No response - could be network error, don't remove
+                print(f"Push failed for {endpoint}: {ex} (no response)")
             return False
     elif platform == "fcm":
         # FCM Token
@@ -334,9 +358,17 @@ async def send_push(subscription, payload):
             return True
         except Exception as ex:
             print(f"FCM push failed for {endpoint}: {ex}")
-            # For FCM, if invalid token, perhaps remove, but FCM has specific errors
-            if "registration-token-not-registered" in str(ex):
-                print("FCM token invalid, removing")
+            # For FCM, remove invalid/not-found tokens
+            error_str = str(ex)
+            if any(
+                err in error_str
+                for err in [
+                    "registration-token-not-registered",
+                    "NOT_FOUND",
+                    "Requested entity was not found",
+                ]
+            ):
+                print("FCM token invalid/not-found, removing")
                 await database.delete_subscription(endpoint, platform)
             return False
     elif platform == "apns":

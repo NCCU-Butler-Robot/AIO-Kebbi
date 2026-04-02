@@ -341,10 +341,19 @@ async def refresh_access_token(
 
 @app.post("/auth/logout")
 async def logout(
-    response: Response, conn: asyncpg.Connection = Depends(get_db_connection)
+    request_obj: Request,
+    response: Response,
+    conn: asyncpg.Connection = Depends(get_db_connection),
 ):
-    # This endpoint needs to be fully implemented
-    # It involves finding the refresh token in the DB and marking it as revoked.
+    refresh_token = request_obj.cookies.get("refresh_token")
+
+    if refresh_token:
+        # Revoke ONLY this specific refresh token
+        await conn.execute(
+            "UPDATE refresh_tokens SET revoked_at = NOW() WHERE token = $1",
+            refresh_token,
+        )
+
     response.delete_cookie(key="refresh_token")
     return {"message": "Successfully logged out"}
 
@@ -371,8 +380,7 @@ async def validate_token_for_nginx(
         )
 
     return JSONResponse(
-        content={"status": "ok"}, 
-        headers={"X-User-ID": user_id, "X-Username": username}
+        content={"status": "ok"}, headers={"X-User-ID": user_id, "X-Username": username}
     )
 
 
