@@ -7,13 +7,10 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../constants.dart';
 import '../di/service_locator.dart';
-import '../models/fraud_models.dart';
 import '../services/api_service.dart';
 import '../services/audio_service.dart';
 import '../services/kebbi_service.dart';
 import '../services/web_speech_service.dart';
-import '../widgets/ssci_panel.dart';
-import 'monitor_page.dart';
 
 class ButlerChatPage extends StatefulWidget {
   const ButlerChatPage({super.key});
@@ -26,21 +23,18 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   final List<_ChatMessage> _messages = [
     _ChatMessage(
       from: _Speaker.butler,
-      text: '請在下方輸入目標電話號碼後開始對話。\nAI 將扮演該號碼對應的用戶，同時監控詐騙風險指數。',
+      text: "Good evening. I'm your Butler. How can I help you today?",
       time: _fmtTime(DateTime.now()),
     ),
   ];
 
-  // 詐騙對話狀態
-  String _phoneNumber = '';
-  bool _conversationStarted = false;
-  SsciData? _ssci;
-
+  String? _conversationId;
   bool _isLoading = false;
   bool _isRecording = false;
   bool _isBusy = false;
   String _liveTranscript = 'Tap mic to start recording...';
 
+  // true → auto-send on final result; false → manual stop, fill text only
   bool _autoSendOnResult = false;
 
   // STT backend: null = not yet detected, true = Kebbi NuwaSDK, false = Vosk
@@ -48,6 +42,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
 
   // Vosk model state
   bool _voskModelReady = false;
+  // null = idle, -1 = extracting, 0-100 = download %
   int? _voskDownloadProgress;
 
   // Microphone permission state
@@ -55,7 +50,6 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   bool _isPermanentlyDenied = false;
 
   final TextEditingController _textController = TextEditingController();
-  final TextEditingController _phoneController = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
 
   @override
@@ -66,11 +60,14 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     KebbiService.setSTTCallback(_onSTTResult);
     KebbiService.setVoskProgressCallback(_onVoskProgress);
 
+    // Web: initialize WebSpeechService callback
     if (kIsWeb) {
       WebSpeechService.I.setCallback(_onSTTResult);
     }
 
+    // Pre-check if the model is already on disk (instant, no download UI)
     _checkVoskModelCached();
+    // Request microphone permission proactively
     _checkMicPermission();
   }
 
@@ -117,7 +114,6 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
       KebbiService.stopVoskSTT();
     }
     _textController.dispose();
-    _phoneController.dispose();
     _scrollCtrl.dispose();
     super.dispose();
   }
@@ -160,6 +156,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   // ── Recording toggle ──────────────────────────────────────────────────────
 
   Future<void> _startSTT() async {
+    // Web: use Web Speech API
     if (kIsWeb) {
       final ok = await WebSpeechService.I.startListening();
       if (!ok) {
@@ -182,6 +179,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
       return;
     }
 
+    // Android: use Kebbi or Vosk
     _useKebbi ??= await KebbiService.isKebbiAvailable();
 
     if (_useKebbi!) {
@@ -259,6 +257,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     if (_isRecording) {
       _autoSendOnResult = false;
 
+      // Web: stop WebSpeechService
       if (kIsWeb) {
         await WebSpeechService.I.stopListening();
       } else if (_useKebbi == true) {
@@ -295,17 +294,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     }
   }
 
-  // ── 確認電話號碼 ────────────────────────────────────────────────────────────
-
-  void _confirmPhone() {
-    final phone = _phoneController.text.trim();
-    if (phone.isEmpty) return;
-    setState(() {
-      _phoneNumber = phone;
-    });
-  }
-
-  // ── 傳送文字至詐騙 API ─────────────────────────────────────────────────────
+  // ── Send text to Butler API ───────────────────────────────────────────────
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -322,9 +311,8 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   Future<void> _sendText() async {
     final txt = _textController.text.trim();
     if (txt.isEmpty || _isLoading) return;
-    if (_phoneNumber.isEmpty) return;
 
-    // 停止 STT
+    // Stop STT - don't listen while processing response
     if (kIsWeb) {
       await WebSpeechService.I.stopListening();
     } else if (_useKebbi == true) {
@@ -339,44 +327,46 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
       _textController.clear();
       _isLoading = true;
       _isRecording = false;
-      _liveTranscript = 'AI 思考中…';
+      _liveTranscript = 'Butler is thinking…';
     });
     _scrollToBottom();
 
     try {
-      final result = await sl<ApiService>().sendFraud(
+      final result = await sl<ApiService>().sendChat(
         prompt: txt,
-        phoneNumber: _phoneNumber,
-        isFirst: !_conversationStarted,
+        conversationId: _conversationId,
       );
 
-      // 標記對話已開始
-      if (!_conversationStarted) {
-        setState(() => _conversationStarted = true);
-      }
+      _conversationId = result.conversationId.isNotEmpty
+          ? result.conversationId
+          : _conversationId;
 
-      // 處理特殊狀態
-      if (result.isInitiateSocketIo) {
-        _handleInitiateSocketIo(result);
-        return;
-      }
-
-      // 更新 SSCI（只在 updated=true 時觸發動畫）
       setState(() {
         _messages.add(_ChatMessage(
           from: _Speaker.butler,
-          text: result.message.isNotEmpty ? result.message : '(no response)',
+          text: result.text.isNotEmpty ? result.text : '(no response)',
           time: _fmtTime(DateTime.now()),
         ));
         _liveTranscript = 'Tap mic to start recording...';
-        if (result.ssci.available || !result.ssci.updated) {
-          _ssci = result.ssci;
-        } else {
-          _ssci = result.ssci;
-        }
-        _isLoading = false;
       });
       _scrollToBottom();
+
+      if (result.audioBytes != null) {
+        await AudioService.I.playMp3Bytes(
+          result.audioBytes!,
+          onComplete: () {
+            if (!mounted) return;
+            setState(() {
+              _isLoading = false;
+              _liveTranscript = 'Listening…';
+            });
+            _startSTT();
+          },
+        );
+        return;
+      }
+
+      if (mounted) setState(() => _isLoading = false);
     } catch (e) {
       setState(() {
         _messages.add(_ChatMessage(
@@ -385,74 +375,10 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
           time: _fmtTime(DateTime.now()),
         ));
         _liveTranscript = 'Tap mic to start recording...';
-        _isLoading = false;
       });
       _scrollToBottom();
+      if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  void _handleInitiateSocketIo(FraudResult result) {
-    if (!mounted) return;
-
-    final reason = result.reason ?? '';
-    final msg = reason == 'ssci_below_threshold_normal_conversation'
-        ? '判定為正常通話，已通知真實用戶接手。'
-        : 'SSCI 無法計算，已預設通知真實用戶。';
-
-    setState(() {
-      _ssci = result.ssci;
-      _isLoading = false;
-      _messages.add(_ChatMessage(
-        from: _Speaker.butler,
-        text: '[系統] $msg',
-        time: _fmtTime(DateTime.now()),
-      ));
-      _liveTranscript = 'Tap mic to start recording...';
-    });
-    _scrollToBottom();
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1E2A38),
-        title: Text(
-          '切換至即時監控',
-          style: GoogleFonts.itim(color: Colors.white, fontSize: 18),
-        ),
-        content: Text(
-          '$msg\n\n即將建立即時通話連線...',
-          style: GoogleFonts.itim(color: Colors.white70, fontSize: 15),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context); // 關閉 dialog
-              // 導到 MonitorPage，帶入 call_token 自動建立 Socket.IO 連線
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => MonitorPage(callToken: result.callToken),
-                ),
-              );
-            },
-            child: Text(
-              '切換監控',
-              style: GoogleFonts.itim(color: kSeaBlue),
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context); // 只關閉 dialog，留在此頁
-            },
-            child: Text(
-              '取消',
-              style: GoogleFonts.itim(color: Colors.white54),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   static String _fmtTime(DateTime t) {
@@ -471,10 +397,8 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
         backgroundColor: backgroundColor,
         leading: BackButton(onPressed: () => Navigator.pop(context)),
         title: Text(
-          _phoneNumber.isEmpty
-              ? '反詐騙 AI'
-              : '反詐騙 AI · $_phoneNumber',
-          style: GoogleFonts.itim(fontSize: 20, color: textColor),
+          'Butler',
+          style: GoogleFonts.itim(fontSize: 24, color: textColor),
         ),
       ),
       body: GestureDetector(
@@ -482,9 +406,6 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
         child: SafeArea(
           child: Column(
             children: [
-              // ===== 電話號碼設定區（未設定時顯示）=====
-              if (_phoneNumber.isEmpty) _buildPhoneSetup(),
-
               // ===== 訊息列表 =====
               Expanded(
                 child: ListView.builder(
@@ -495,10 +416,6 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                       _ChatBubble(message: _messages[i]),
                 ),
               ),
-
-              // ===== SSCI 面板 =====
-              if (_phoneNumber.isNotEmpty)
-                SsciPanel(ssci: _ssci),
 
               // ===== 錄音狀態區 =====
               Container(
@@ -514,14 +431,14 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                   children: [
                     Text(
                       _isRecording ? 'Listening…' : 'Paused',
-                      style: GoogleFonts.itim(
-                          fontSize: 14, color: Colors.white70),
+                      style:
+                          GoogleFonts.itim(fontSize: 14, color: Colors.white70),
                     ),
                     const SizedBox(height: 8),
                     FakeSiriWave(active: _isRecording),
                     const SizedBox(height: 10),
 
-                    // Vosk 下載進度條
+                    // Download progress bar (Vosk model)
                     if (_voskDownloadProgress != null &&
                         _voskDownloadProgress! >= 0) ...[
                       Padding(
@@ -545,8 +462,8 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                       child: Text(
                         _liveTranscript,
                         textAlign: TextAlign.center,
-                        style: GoogleFonts.itim(
-                            fontSize: 15, color: Colors.white),
+                        style:
+                            GoogleFonts.itim(fontSize: 15, color: Colors.white),
                       ),
                     ),
                   ],
@@ -560,8 +477,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                   children: [
                     Expanded(
                       child: Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(14),
@@ -572,14 +488,11 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                             Expanded(
                               child: TextField(
                                 controller: _textController,
-                                enabled: _phoneNumber.isNotEmpty,
                                 style: GoogleFonts.itim(
                                     color: textColor, fontSize: 16),
                                 decoration: InputDecoration(
                                   border: InputBorder.none,
-                                  hintText: _phoneNumber.isEmpty
-                                      ? '請先設定電話號碼'
-                                      : 'Type a message...',
+                                  hintText: 'Type a message...',
                                   hintStyle: GoogleFonts.itim(
                                       color: textColor, fontSize: 16),
                                 ),
@@ -594,13 +507,9 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                                         strokeWidth: 2),
                                   )
                                 : IconButton(
-                                    onPressed: _phoneNumber.isNotEmpty
-                                        ? _sendText
-                                        : null,
-                                    icon: Icon(Icons.send,
-                                        color: _phoneNumber.isNotEmpty
-                                            ? iconColor
-                                            : Colors.grey),
+                                    onPressed: _sendText,
+                                    icon: const Icon(Icons.send,
+                                        color: iconColor),
                                   ),
                           ],
                         ),
@@ -612,7 +521,6 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                     InkWell(
                       onTap: () async {
                         if (_isLoading || _isBusy) return;
-                        if (_phoneNumber.isEmpty) return;
                         if (_isPermanentlyDenied && !_micPermissionGranted) {
                           _openSettings();
                         } else {
@@ -626,7 +534,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                         decoration: BoxDecoration(
                           color: _isRecording
                               ? const Color(0xff29d97a)
-                              : _isBusy || _phoneNumber.isEmpty
+                              : _isBusy
                                   ? Colors.grey
                                   : kSeaBlue,
                           shape: BoxShape.circle,
@@ -639,13 +547,15 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                               )
                             : Icon(
                                 (_isPermanentlyDenied &&
-                                            !_micPermissionGranted)
-                                    ? Icons.settings
-                                    : (_isRecording
+                                            !_micPermissionGranted) ||
+                                        _isRecording
+                                    ? (_isPermanentlyDenied &&
+                                            !_micPermissionGranted
+                                        ? Icons.settings
+                                        : Icons.mic)
+                                    : (_micPermissionGranted
                                         ? Icons.mic
-                                        : (_micPermissionGranted
-                                            ? Icons.mic
-                                            : Icons.mic_off)),
+                                        : Icons.mic_off),
                                 color: Colors.black,
                                 size: 26,
                               ),
@@ -657,46 +567,6 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildPhoneSetup() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white10,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white24),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.phone, color: Colors.white54, size: 20),
-          const SizedBox(width: 8),
-          Expanded(
-            child: TextField(
-              controller: _phoneController,
-              keyboardType: TextInputType.phone,
-              style: GoogleFonts.itim(color: Colors.white, fontSize: 15),
-              decoration: InputDecoration(
-                border: InputBorder.none,
-                hintText: '輸入目標電話號碼（如 0911000001）',
-                hintStyle:
-                    GoogleFonts.itim(color: Colors.white38, fontSize: 14),
-                isDense: true,
-              ),
-              onSubmitted: (_) => _confirmPhone(),
-            ),
-          ),
-          TextButton(
-            onPressed: _confirmPhone,
-            child: Text(
-              '確認',
-              style: GoogleFonts.itim(color: kSeaBlue, fontSize: 15),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -729,8 +599,7 @@ class _ChatBubble extends StatelessWidget {
           ConstrainedBox(
             constraints: BoxConstraints(maxWidth: maxW),
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
                 color: isUser ? kSeaBlue : Colors.white12,
                 borderRadius: BorderRadius.circular(18),
@@ -741,16 +610,15 @@ class _ChatBubble extends StatelessWidget {
                 children: [
                   Text(
                     message.text,
-                    style:
-                        GoogleFonts.itim(fontSize: 16, color: textColor),
+                    style: GoogleFonts.itim(fontSize: 16, color: textColor),
                   ),
                   const SizedBox(height: 6),
                   Align(
                     alignment: Alignment.bottomRight,
                     child: Text(
                       message.time,
-                      style: GoogleFonts.itim(
-                          fontSize: 12, color: Colors.white70),
+                      style:
+                          GoogleFonts.itim(fontSize: 12, color: Colors.white70),
                     ),
                   ),
                 ],
